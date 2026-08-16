@@ -45,7 +45,7 @@ test.describe('instalabilidad', () => {
     expect(respuesta.status()).toBe(200)
 
     const manifiesto = await respuesta.json()
-    expect(manifiesto.name).toBe('Gestión de pozos')
+    expect(manifiesto.name).toBe('InfoWell')
     expect(manifiesto.display).toBe('standalone')
     expect(manifiesto.start_url).toBe('/')
 

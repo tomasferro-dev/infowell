@@ -14,7 +14,7 @@ test.describe('autenticación', () => {
     await page.goto('/')
 
     await expect(page).toHaveURL(/\/login/)
-    await expect(page.getByRole('heading', { name: 'Historial de perforaciones' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'InfoWell' })).toBeVisible()
   })
 
   test('una contraseña incorrecta no deja entrar y no revela si el email existe', async ({

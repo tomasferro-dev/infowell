@@ -28,15 +28,15 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Gestión de pozos',
-    template: '%s · Gestión de pozos',
+    default: 'InfoWell',
+    template: '%s · InfoWell',
   },
-  description: 'Historial técnico de perforaciones de pozos de agua',
+  description: 'Historial técnico de perforaciones — ARENAS Perforaciones',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     // iOS no lee el manifest: la configuración de app instalada va por acá.
     capable: true,
-    title: 'Pozos',
+    title: 'InfoWell',
     statusBarStyle: 'default',
   },
   icons: {

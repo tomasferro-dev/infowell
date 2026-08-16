@@ -65,7 +65,23 @@ export async function POST(request: Request) {
     const { signedUrl } = await crearUrlDeSubida(bucket, ruta)
 
     return NextResponse.json({ signedUrl, ruta })
-  } catch {
-    return NextResponse.json({ error: 'No se pudo preparar la subida' }, { status: 400 })
+  } catch (error) {
+    // El detalle va al log del servidor (Vercel → Logs), nunca al navegador:
+    // el mensaje de Supabase puede incluir datos de la configuración.
+    console.error('[uploads/sign] falló al firmar', {
+      bucket,
+      mensaje: error instanceof Error ? error.message : String(error),
+    })
+
+    // Al cliente se le devuelve una causa útil pero genérica, para que el
+    // mensaje en pantalla diga qué revisar en vez de "algo falló".
+    return NextResponse.json(
+      {
+        error: 'storage_no_disponible',
+        detalle:
+          'No se pudo preparar la subida. Revisá la configuración de Storage (bucket y claves).',
+      },
+      { status: 502 },
+    )
   }
 }

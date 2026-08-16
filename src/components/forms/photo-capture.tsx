@@ -5,6 +5,7 @@ import { Camera, ImagePlus, Loader2, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { describirFalloDeFirma } from '@/lib/subidas'
 import { cn } from '@/lib/utils'
 
 /**
@@ -68,7 +69,7 @@ export function PhotoCapture({
         }),
       })
 
-      if (!firma.ok) throw new Error('No se pudo preparar la subida')
+      if (!firma.ok) throw new Error(await describirFalloDeFirma(firma))
       const { signedUrl, ruta } = await firma.json()
 
       const cuerpo = new FormData()
@@ -76,16 +77,20 @@ export function PhotoCapture({
       cuerpo.append('', comprimida)
 
       const subida = await fetch(signedUrl, { method: 'PUT', body: cuerpo })
-      if (!subida.ok) throw new Error('Falló la subida')
+      if (!subida.ok) {
+        throw new Error(`El servidor de archivos rechazó la foto (${subida.status}).`)
+      }
 
       setFotos((previas) =>
         previas.map((f) => (f.id === id ? { ...f, ruta, subiendo: false } : f)),
       )
-    } catch {
+    } catch (error) {
       setFotos((previas) =>
         previas.map((f) => (f.id === id ? { ...f, subiendo: false, error: true } : f)),
       )
-      setMensaje('Alguna foto no se pudo subir. Tocá la X para quitarla y probá de nuevo.')
+      // Se muestra la causa real: sin esto, un problema de configuración se
+      // ve igual que una foto pesada o una señal mala.
+      setMensaje(error instanceof Error ? error.message : 'No se pudo subir la foto.')
     }
   }
 

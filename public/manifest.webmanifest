@@ -1,7 +1,7 @@
 {
-  "name": "Gestión de pozos",
-  "short_name": "Pozos",
-  "description": "Historial técnico de perforaciones de pozos de agua",
+  "name": "InfoWell",
+  "short_name": "InfoWell",
+  "description": "Historial técnico de perforaciones — ARENAS Perforaciones",
   "lang": "es-AR",
   "dir": "ltr",
   "start_url": "/",

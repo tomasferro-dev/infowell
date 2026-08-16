@@ -1,9 +1,10 @@
 'use client'
 
-import { Loader2, Mic, Square, Trash2 } from 'lucide-react'
+import { Loader2, Mic, RotateCcw, Square, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { describirFalloDeFirma } from '@/lib/subidas'
 import { cn } from '@/lib/utils'
 
 /**
@@ -61,6 +62,13 @@ export function VoiceRecorder({
   const chunksRef = useRef<BlobPart[]>([])
   const intervaloRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const duracionRef = useRef(0)
+  /**
+   * La última grabación, guardada para poder reintentar.
+   *
+   * Si la subida falla por algo del servidor, el técnico ya habló: perder el
+   * audio y obligarlo a repetir todo es la peor respuesta posible.
+   */
+  const grabacionRef = useRef<{ blob: Blob; mime: string; duracion: number } | null>(null)
 
   /**
    * Detección de soporte sin efecto ni setState: es un valor que solo existe en
@@ -93,6 +101,7 @@ export function VoiceRecorder({
   }
 
   async function subir(blob: Blob, mime: string, duracion: number) {
+    grabacionRef.current = { blob, mime, duracion }
     setEstado('subiendo')
     setMensaje(undefined)
 
@@ -103,7 +112,7 @@ export function VoiceRecorder({
         body: JSON.stringify({ tipo: 'nota-voz', farmId, recursoId, mimeType: mime }),
       })
 
-      if (!respuesta.ok) throw new Error('No se pudo preparar la subida')
+      if (!respuesta.ok) throw new Error(await describirFalloDeFirma(respuesta))
       const { signedUrl, ruta } = await respuesta.json()
 
       // Contrato de uploadToSignedUrl de Supabase: PUT con multipart, donde el
@@ -113,13 +122,16 @@ export function VoiceRecorder({
       cuerpo.append('', blob)
 
       const subida = await fetch(signedUrl, { method: 'PUT', body: cuerpo })
-      if (!subida.ok) throw new Error('Falló la subida del audio')
+      if (!subida.ok) {
+        throw new Error(`El servidor de archivos rechazó el audio (${subida.status}).`)
+      }
 
       setSubido({ ruta, mime, duracion })
       setEstado('listo')
-    } catch {
+    } catch (error) {
       setEstado('error')
-      setMensaje('No se pudo subir la nota de voz. Probá de nuevo.')
+      // La grabación NO se descarta: queda para reintentar sin volver a hablar.
+      setMensaje(error instanceof Error ? error.message : 'No se pudo subir la nota de voz.')
     }
   }
 
@@ -176,6 +188,14 @@ export function VoiceRecorder({
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
   }
 
+  /** Vuelve a intentar con el audio que ya está grabado, sin regrabar. */
+  function reintentar() {
+    const grabacion = grabacionRef.current
+    if (!grabacion) return
+
+    void subir(grabacion.blob, grabacion.mime, grabacion.duracion)
+  }
+
   function descartar() {
     if (urlPrevia) URL.revokeObjectURL(urlPrevia)
     setUrlPrevia(undefined)
@@ -183,6 +203,7 @@ export function VoiceRecorder({
     setSegundos(0)
     setEstado('inicial')
     setMensaje(undefined)
+    grabacionRef.current = null
   }
 
   if (!soportado) {
@@ -205,7 +226,7 @@ export function VoiceRecorder({
         </>
       ) : null}
 
-      {estado === 'inicial' || estado === 'error' ? (
+      {estado === 'inicial' ? (
         <Button
           type="button"
           variant="outline"
@@ -215,6 +236,35 @@ export function VoiceRecorder({
           <Mic className="size-4" />
           Grabar nota de voz
         </Button>
+      ) : null}
+
+      {/* Falló la subida pero la grabación sigue en memoria: se reintenta sin
+          volver a hablar, y también se puede escuchar mientras tanto. */}
+      {estado === 'error' ? (
+        <div className="border-destructive space-y-3 rounded-lg border p-3">
+          {urlPrevia ? <audio controls src={urlPrevia} className="w-full" /> : null}
+
+          <div className="flex gap-2">
+            {grabacionRef.current ? (
+              <Button
+                type="button"
+                onClick={reintentar}
+                className="h-12 flex-1 text-base"
+              >
+                <RotateCcw className="size-4" />
+                Reintentar
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={descartar}
+              className="h-12 text-base"
+            >
+              Descartar
+            </Button>
+          </div>
+        </div>
       ) : null}
 
       {estado === 'grabando' ? (

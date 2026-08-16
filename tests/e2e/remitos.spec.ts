@@ -173,3 +173,54 @@ test.describe('permisos sobre remitos', () => {
     expect(respuesta.status()).toBe(404)
   })
 })
+
+test.describe('cuando Storage falla', () => {
+  test('el mensaje dice qué revisar, en vez de un error genérico', async ({ page }) => {
+    await login(page, `${marca}-cargador@test.local`)
+
+    // Se simula la caída de Storage: la firma responde 502, que es lo que
+    // devuelve el servidor cuando no puede hablar con Supabase.
+    await page.route('**/api/uploads/sign', (ruta) =>
+      ruta.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'storage_no_disponible',
+          detalle:
+            'No se pudo preparar la subida. Revisá la configuración de Storage (bucket y claves).',
+        }),
+      }),
+    )
+
+    await page.goto(urlNuevo)
+    await page.locator('input[type="file"]').nth(1).setInputFiles({
+      name: 'remito.png',
+      mimeType: 'image/png',
+      buffer: PNG_MINIMO,
+    })
+
+    // El operario tiene que enterarse de que no es culpa suya ni de la señal.
+    await expect(page.getByText(/Revisá la configuración de Storage/)).toBeVisible()
+  })
+
+  test('una sesión vencida se distingue de un problema del servidor', async ({ page }) => {
+    await login(page, `${marca}-cargador@test.local`)
+
+    await page.route('**/api/uploads/sign', (ruta) =>
+      ruta.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Sin sesión' }),
+      }),
+    )
+
+    await page.goto(urlNuevo)
+    await page.locator('input[type="file"]').nth(1).setInputFiles({
+      name: 'remito.png',
+      mimeType: 'image/png',
+      buffer: PNG_MINIMO,
+    })
+
+    await expect(page.getByText(/Se cerró tu sesión/)).toBeVisible()
+  })
+})
