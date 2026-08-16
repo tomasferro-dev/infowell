@@ -137,15 +137,21 @@ test.describe('permisos sobre el historial', () => {
     await expect(page.getByRole('heading', { name: `Pozo ${marca}` })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Nueva intervención' })).toHaveCount(0)
 
-    const respuesta = await page.goto(urlNueva)
-    expect(respuesta?.status()).toBe(404)
+    await page.goto(urlNueva)
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes del
+    // guard: lo que se verifica es que llegue la pantalla de "no encontrado"
+    // y ningún dato. Ver tests/e2e/auditoria-idor.spec.ts.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 
   test('el cargador tampoco puede cargar intervenciones', async ({ page }) => {
     await login(page, `${marca}-cargador@test.local`)
 
-    const respuesta = await page.goto(urlNueva)
-    expect(respuesta?.status()).toBe(404)
+    await page.goto(urlNueva)
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes del
+    // guard: lo que se verifica es que llegue la pantalla de "no encontrado"
+    // y ningún dato. Ver tests/e2e/auditoria-idor.spec.ts.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 })
 

@@ -1,10 +1,11 @@
-import { Building2, ChevronRight, Plus, Search } from 'lucide-react'
+import { Building2, Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { FlechaOCarga, IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { listarFincas } from '@/server/queries/farms'
 import { can } from '@/server/guards'
 
@@ -26,6 +27,7 @@ export default async function FincasPage({
             <Link href="/fincas/nueva">
               <Plus className="size-4" />
               Nueva
+              <IndicadorEnlace />
             </Link>
           </Button>
         ) : null}
@@ -73,7 +75,7 @@ export default async function FincasPage({
                 <Badge variant="secondary" className="shrink-0">
                   {finca._count.wells} {finca._count.wells === 1 ? 'pozo' : 'pozos'}
                 </Badge>
-                <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+                <FlechaOCarga />
               </Link>
             </li>
           ))}

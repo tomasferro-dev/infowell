@@ -8,6 +8,7 @@ import { PrismaClient } from '@/generated/prisma/client'
  * agota el límite de Postgres. Las migraciones usan DIRECT_URL — ver
  * prisma.config.ts.
  */
+
 /**
  * Sin `throw` en el cuerpo del módulo, a propósito.
  *
@@ -30,13 +31,36 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 /**
+ * Límites de tiempo, para que nada se quede colgado.
+ *
+ * Sin estos valores, una base que no responde —Supabase pausa los proyectos
+ * gratuitos tras una semana sin uso, y el primer pedido después tarda en
+ * despertarla— deja el request esperando indefinidamente: el usuario ve la
+ * pantalla trabada sin ningún error, que es lo peor de los dos mundos.
+ *
+ * Fallar en 15 segundos permite mostrar un mensaje y ofrecer reintentar.
+ */
+const adapter = new PrismaPg({
+  connectionString,
+  // Tiempo para conseguir una conexión del pool.
+  connectionTimeoutMillis: 15_000,
+  // Corta consultas desbocadas del lado del servidor de base.
+  statement_timeout: 20_000,
+  // Cierra las conexiones ociosas: en serverless cada instancia tiene su pool
+  // y dejarlas abiertas consume el cupo del plan gratuito.
+  idleTimeoutMillis: 10_000,
+  // Pocas conexiones por instancia: la concurrencia la maneja el pooler.
+  max: 5,
+})
+
+/**
  * Singleton: en dev, el hot reload de Next re-ejecuta este módulo en cada
  * cambio y sin el cache global se acumularían clientes (y conexiones).
  */
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    adapter: new PrismaPg({ connectionString }),
+    adapter,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   })
 

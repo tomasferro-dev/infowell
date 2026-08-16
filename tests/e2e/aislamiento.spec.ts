@@ -37,22 +37,25 @@ test.describe('aislamiento entre fincas', () => {
     await expect(page.getByText(NOMBRE_AJENA)).toHaveCount(0)
   })
 
-  test('el cliente que entra por URL a una finca ajena recibe 404', async ({ page }) => {
+  test('el cliente que entra por URL a una finca ajena no ve nada de ella', async ({ page }) => {
     await login(page, EMAIL_CLIENTE)
 
-    const respuesta = await page.goto(`/fincas/${fincaAjenaId}`)
+    await page.goto(`/fincas/${fincaAjenaId}`)
 
-    // 404 y no 403: un 403 confirmaría que esa finca existe.
-    expect(respuesta?.status()).toBe(404)
+    // La misma pantalla que para algo inexistente: así no puede deducir que
+    // esa finca existe. Ver el detalle del compromiso en auditoria-idor.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
     await expect(page.getByText(NOMBRE_AJENA)).toHaveCount(0)
   })
 
   test('el cliente tampoco alcanza un pozo de una finca ajena por URL', async ({ page }) => {
     await login(page, EMAIL_CLIENTE)
 
-    const respuesta = await page.goto(`/fincas/${fincaAjenaId}/pozos/${datos.pozoAjenoId}`)
+    await page.goto(`/fincas/${fincaAjenaId}/pozos/${datos.pozoAjenoId}`)
 
-    expect(respuesta?.status()).toBe(404)
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes
+    // del guard: se verifica la pantalla, no el número. Ver auditoria-idor.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
     await expect(page.getByText('Pozo secreto')).toHaveCount(0)
   })
 
@@ -62,8 +65,11 @@ test.describe('aislamiento entre fincas', () => {
     await login(page, EMAIL_CLIENTE)
 
     // Es de solo lectura: ni siquiera sobre lo suyo puede escribir.
-    const respuesta = await page.goto(`/fincas/${fincaPropiaId}/editar`)
-    expect(respuesta?.status()).toBe(404)
+    await page.goto(`/fincas/${fincaPropiaId}/editar`)
+
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes
+    // del guard: se verifica la pantalla, no el número. Ver auditoria-idor.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 
   test('el cliente no ve botones de escritura en su propia finca', async ({ page }) => {
@@ -78,8 +84,11 @@ test.describe('aislamiento entre fincas', () => {
   test('el cliente no accede a la gestión de usuarios', async ({ page }) => {
     await login(page, EMAIL_CLIENTE)
 
-    const respuesta = await page.goto('/admin/usuarios')
-    expect(respuesta?.status()).toBe(404)
+    await page.goto('/admin/usuarios')
+
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes
+    // del guard: se verifica la pantalla, no el número. Ver auditoria-idor.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 
   test('el cargador ve su finca pero no puede crear pozos', async ({ page }) => {
@@ -90,15 +99,21 @@ test.describe('aislamiento entre fincas', () => {
     // Su permiso de escritura es solo para remitos.
     await expect(page.getByRole('link', { name: 'Agregar' })).toHaveCount(0)
 
-    const respuesta = await page.goto(`/fincas/${fincaPropiaId}/pozos/nuevo`)
-    expect(respuesta?.status()).toBe(404)
+    await page.goto(`/fincas/${fincaPropiaId}/pozos/nuevo`)
+
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes
+    // del guard: se verifica la pantalla, no el número. Ver auditoria-idor.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 
   test('el cargador no ve la finca ajena', async ({ page }) => {
     await login(page, EMAIL_CARGADOR)
 
-    const respuesta = await page.goto(`/fincas/${fincaAjenaId}`)
-    expect(respuesta?.status()).toBe(404)
+    await page.goto(`/fincas/${fincaAjenaId}`)
+
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes
+    // del guard: se verifica la pantalla, no el número. Ver auditoria-idor.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 })
 

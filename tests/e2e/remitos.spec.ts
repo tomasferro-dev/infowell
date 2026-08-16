@@ -132,15 +132,21 @@ test.describe('permisos sobre remitos', () => {
     await expect(page.getByRole('heading', { name: 'Remitos' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Cargar' })).toHaveCount(0)
 
-    const respuesta = await page.goto(urlNuevo)
-    expect(respuesta?.status()).toBe(404)
+    await page.goto(urlNuevo)
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes del
+    // guard: lo que se verifica es que llegue la pantalla de "no encontrado"
+    // y ningún dato. Ver tests/e2e/auditoria-idor.spec.ts.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 
   test('el cargador no alcanza los remitos de una finca ajena', async ({ page }) => {
     await login(page, `${marca}-cargador@test.local`)
 
-    const respuesta = await page.goto(`/fincas/${datos.fincaAjenaId}/remitos`)
-    expect(respuesta?.status()).toBe(404)
+    await page.goto(`/fincas/${datos.fincaAjenaId}/remitos`)
+    // Con loading.tsx la respuesta se transmite y el estado sale 200 antes del
+    // guard: lo que se verifica es que llegue la pantalla de "no encontrado"
+    // y ningún dato. Ver tests/e2e/auditoria-idor.spec.ts.
+    await expect(page.getByRole('heading', { name: 'No encontramos esta página' })).toBeVisible()
   })
 
   test('el cargador sí puede pedir la firma para subir una foto de remito', async ({ page }) => {

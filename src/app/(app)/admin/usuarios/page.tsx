@@ -1,8 +1,9 @@
-import { ChevronRight, Plus, UserCog } from 'lucide-react'
+import { Plus, UserCog } from 'lucide-react'
 import Link from 'next/link'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { FlechaOCarga } from '@/components/layout/indicador-enlace'
 import { listarUsuarios } from '@/server/queries/users'
 
 const ETIQUETA_ROL = {
@@ -51,7 +52,7 @@ export default async function UsuariosPage() {
                   Inactivo
                 </Badge>
               ) : null}
-              <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+              <FlechaOCarga />
             </Link>
           </li>
         ))}

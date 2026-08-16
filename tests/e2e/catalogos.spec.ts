@@ -36,6 +36,9 @@ test.describe('catálogo de servicios', () => {
   }) => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
     await page.goto('/admin/servicios')
+    // Se espera a que la lista esté cargada antes de contar: si no, se
+    // contarían cero (el esqueleto es decorativo y no expone sus filas).
+    await expect(page.getByText('Perforación de pozo')).toBeVisible()
 
     const antes = await page.getByRole('listitem').count()
 

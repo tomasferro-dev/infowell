@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FileText, Plus } from 'lucide-react'
+import { ChevronLeft, FileText, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
@@ -6,6 +6,7 @@ import { GaleriaRemito } from '@/components/data/galeria-remito'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatearMonto } from '@/lib/validation/remito'
+import { FlechaOCarga, IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { can } from '@/server/guards'
 import { obtenerFinca } from '@/server/queries/farms'
 import { listarRemitos } from '@/server/queries/receipts'
@@ -51,6 +52,7 @@ export default async function RemitosPage({
             <Link href={`/fincas/${farmId}/remitos/nuevo`}>
               <Plus className="size-4" />
               Cargar
+              <IndicadorEnlace />
             </Link>
           </Button>
         ) : null}
@@ -88,7 +90,7 @@ export default async function RemitosPage({
                         {remito.number ? ` · N° ${remito.number}` : ''}
                       </p>
                     </div>
-                    <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+                    <FlechaOCarga />
                   </Link>
 
                   {remito.description ? (

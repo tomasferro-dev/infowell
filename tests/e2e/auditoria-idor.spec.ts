@@ -11,7 +11,39 @@ import { limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpe
  *
  * Este archivo enumera TODA ruta que reciba un id y la prueba con un id ajeno,
  * con cada rol. Cuando se agregue una ruta nueva con parámetros, va acá.
+ *
+ * POR QUÉ SE VERIFICA EL CONTENIDO Y NO EL CÓDIGO HTTP:
+ * las páginas tienen `loading.tsx`, y eso hace que Next empiece a transmitir
+ * la respuesta —con estado 200— antes de terminar de renderizarlas. Cuando
+ * después corre el guard y llama a notFound(), la cabecera ya salió.
+ *
+ * Es un compromiso consciente: se eligió tener indicadores de carga en toda
+ * navegación. Lo que importa se conserva y se prueba acá — el usuario recibe
+ * la pantalla de "no encontrado", NUNCA el dato, y esa pantalla es idéntica
+ * para algo ajeno y para algo inexistente, así que sigue sin poder deducir
+ * qué existe. De hecho verificar el contenido es más fuerte que verificar el
+ * número: un 404 no demuestra que no se haya filtrado nada.
+ *
+ * Los endpoints de /api NO transmiten, así que ahí sí se verifica el estado.
  */
+
+/** Navega y exige la pantalla de "no encontrado", sin rastro del dato. */
+async function exigirNoEncontrado(
+  page: import('@playwright/test').Page,
+  ruta: string,
+  textosProhibidos: string[] = [],
+) {
+  await page.goto(ruta)
+
+  await expect(
+    page.getByRole('heading', { name: 'No encontramos esta página' }),
+    `debería mostrar "no encontrado": ${ruta}`,
+  ).toBeVisible()
+
+  for (const texto of textosProhibidos) {
+    await expect(page.getByText(texto), `no debe filtrar "${texto}" en ${ruta}`).toHaveCount(0)
+  }
+}
 
 const EMAIL_ADMIN = process.env.SEED_ADMIN_EMAIL
 const CLAVE_ADMIN = process.env.SEED_ADMIN_PASSWORD
@@ -58,8 +90,9 @@ test.describe('el CLIENTE no alcanza nada ajeno', () => {
     await login(page, `${marca}-cliente@test.local`)
 
     for (const ruta of rutasDeFincaAjena(datos)) {
-      const respuesta = await page.goto(ruta)
-      expect(respuesta?.status(), `debería ser 404: ${ruta}`).toBe(404)
+      // Además de la pantalla correcta: ni el nombre de la finca ajena ni el
+      // de su pozo pueden aparecer en ningún lado.
+      await exigirNoEncontrado(page, ruta, [`${marca} Finca Ajena`, 'Pozo secreto'])
     }
   })
 
@@ -67,8 +100,7 @@ test.describe('el CLIENTE no alcanza nada ajeno', () => {
     await login(page, `${marca}-cliente@test.local`)
 
     for (const ruta of RUTAS_ADMIN) {
-      const respuesta = await page.goto(ruta)
-      expect(respuesta?.status(), `debería ser 404: ${ruta}`).toBe(404)
+      await exigirNoEncontrado(page, ruta)
     }
   })
 
@@ -84,8 +116,7 @@ test.describe('el CLIENTE no alcanza nada ajeno', () => {
     ]
 
     for (const ruta of propias) {
-      const respuesta = await page.goto(ruta)
-      expect(respuesta?.status(), `debería ser 404: ${ruta}`).toBe(404)
+      await exigirNoEncontrado(page, ruta)
     }
   })
 })
@@ -95,8 +126,7 @@ test.describe('el CARGADOR solo escribe remitos', () => {
     await login(page, `${marca}-cargador@test.local`)
 
     for (const ruta of rutasDeFincaAjena(datos)) {
-      const respuesta = await page.goto(ruta)
-      expect(respuesta?.status(), `debería ser 404: ${ruta}`).toBe(404)
+      await exigirNoEncontrado(page, ruta, [`${marca} Finca Ajena`, 'Pozo secreto'])
     }
   })
 
@@ -104,8 +134,7 @@ test.describe('el CARGADOR solo escribe remitos', () => {
     await login(page, `${marca}-cargador@test.local`)
 
     for (const ruta of RUTAS_ADMIN) {
-      const respuesta = await page.goto(ruta)
-      expect(respuesta?.status(), `debería ser 404: ${ruta}`).toBe(404)
+      await exigirNoEncontrado(page, ruta)
     }
   })
 
@@ -120,13 +149,12 @@ test.describe('el CARGADOR solo escribe remitos', () => {
     ]
 
     for (const ruta of prohibidas) {
-      const respuesta = await page.goto(ruta)
-      expect(respuesta?.status(), `debería ser 404: ${ruta}`).toBe(404)
+      await exigirNoEncontrado(page, ruta)
     }
 
     // Y lo que SÍ le corresponde sigue funcionando.
-    const permitida = await page.goto(`/fincas/${datos.fincaPropiaId}/remitos/nuevo`)
-    expect(permitida?.status()).toBe(200)
+    await page.goto(`/fincas/${datos.fincaPropiaId}/remitos/nuevo`)
+    await expect(page.getByRole('heading', { name: 'Cargar remito' })).toBeVisible()
   })
 })
 
@@ -139,12 +167,9 @@ test.describe('ids cruzados entre fincas', () => {
   test('finca propia + pozo ajeno no devuelve el pozo ajeno', async ({ page }) => {
     await login(page, `${marca}-cliente@test.local`)
 
-    const respuesta = await page.goto(
-      `/fincas/${datos.fincaPropiaId}/pozos/${datos.pozoAjenoId}`,
-    )
-
-    expect(respuesta?.status()).toBe(404)
-    await expect(page.getByText('Pozo secreto')).toHaveCount(0)
+    await exigirNoEncontrado(page, `/fincas/${datos.fincaPropiaId}/pozos/${datos.pozoAjenoId}`, [
+      'Pozo secreto',
+    ])
   })
 
   test('el admin tampoco ve un pozo bajo una finca que no es la suya', async ({ page }) => {
@@ -152,11 +177,9 @@ test.describe('ids cruzados entre fincas', () => {
 
     // El admin ve todo, pero el pozo tiene que estar en la finca pedida:
     // si no, la URL estaría mintiendo sobre a quién pertenece.
-    const respuesta = await page.goto(
-      `/fincas/${datos.fincaPropiaId}/pozos/${datos.pozoAjenoId}`,
-    )
-
-    expect(respuesta?.status()).toBe(404)
+    await exigirNoEncontrado(page, `/fincas/${datos.fincaPropiaId}/pozos/${datos.pozoAjenoId}`, [
+      'Pozo secreto',
+    ])
   })
 })
 

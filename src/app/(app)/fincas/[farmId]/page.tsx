@@ -1,10 +1,11 @@
-import { ChevronLeft, ChevronRight, Droplet, FileText, MapPin, Pencil, Phone, Plus } from 'lucide-react'
+import { ChevronLeft, Droplet, FileText, MapPin, Pencil, Phone, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { FlechaOCarga, IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { can } from '@/server/guards'
 import { obtenerFinca } from '@/server/queries/farms'
 
@@ -76,6 +77,7 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
               <Link href={`/fincas/${farmId}/pozos/nuevo`}>
                 <Plus className="size-4" />
                 Agregar
+                <IndicadorEnlace />
               </Link>
             </Button>
           ) : null}
@@ -105,7 +107,7 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
                     {pozo._count.interventions}{' '}
                     {pozo._count.interventions === 1 ? 'servicio' : 'servicios'}
                   </Badge>
-                  <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+                  <FlechaOCarga />
                 </Link>
               </li>
             ))}
@@ -127,7 +129,7 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
                 : `${finca._count.receipts} cargado(s)`}
             </p>
           </div>
-          <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+          <FlechaOCarga />
         </Link>
       </section>
     </div>

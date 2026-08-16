@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 
 import { GraficoEvolucion } from '@/components/data/grafico-evolucion'
 import { PerfilPozo } from '@/components/data/perfil-pozo'
+import { IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { TimelinePozo } from '@/components/data/timeline-pozo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -128,6 +129,7 @@ export default async function PozoPage({
           <Link href={`/fincas/${farmId}/pozos/${wellId}/intervencion/nueva`}>
             <Plus className="size-4" />
             Nueva intervención
+            <IndicadorEnlace />
           </Link>
         </Button>
       ) : null}

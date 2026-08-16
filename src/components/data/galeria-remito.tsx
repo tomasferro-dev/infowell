@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import { ImagenConCarga } from '@/components/data/imagen-con-carga'
 import { VisorImagenes } from '@/components/data/visor-imagenes'
 
 export type FotoRemito = { id: string; storagePath: string }
@@ -42,13 +43,7 @@ export function GaleriaRemito({
               aria-label={`Ampliar foto ${i + 1} de ${fotos.length}`}
               className="aspect-square w-full overflow-hidden rounded-md border"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element -- ruta protegida con redirect firmado */}
-              <img
-                src={imagen.src}
-                alt={imagen.alt}
-                loading="lazy"
-                className="size-full object-cover"
-              />
+              <ImagenConCarga src={imagen.src} alt={imagen.alt} className="object-cover" />
             </button>
           </li>
         ))}

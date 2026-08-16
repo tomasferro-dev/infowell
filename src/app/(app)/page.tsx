@@ -1,10 +1,11 @@
-import { Building2, Camera, ChevronRight, Droplet, FileText } from 'lucide-react'
+import { Building2, Camera, Droplet, FileText } from 'lucide-react'
 import Link from 'next/link'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatearMonto } from '@/lib/validation/remito'
+import { FlechaOCarga, IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { datosDelInicio, fincasDelCargador } from '@/server/queries/dashboard'
 
 const formatoFecha = new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' })
@@ -45,6 +46,7 @@ export default async function InicioPage() {
           <Link href={`/fincas/${fincasCargador[0]!.id}/remitos/nuevo`}>
             <Camera className="size-5" />
             Cargar remito
+            <IndicadorEnlace className="size-5" />
           </Link>
         </Button>
       ) : null}
@@ -86,7 +88,7 @@ export default async function InicioPage() {
                       </p>
                     ) : null}
                   </div>
-                  <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+                  <FlechaOCarga />
                 </Link>
               </li>
             ))}
@@ -114,7 +116,7 @@ export default async function InicioPage() {
                       {remito.finca.name} · {formatoFecha.format(new Date(remito.issueDate))}
                     </p>
                   </div>
-                  <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+                  <FlechaOCarga />
                 </Link>
               </li>
             ))}
