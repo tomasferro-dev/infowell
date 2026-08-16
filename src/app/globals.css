@@ -1,26 +1,218 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────
+   IDENTIDAD ARENAS PERFORACIONES
+
+   Los colores salen del logo, muestreados del PNG original:
+     rojo   #ec1f25   →  oklch(0.6026 0.2325 27.05)
+     carbón #383a3c   →  oklch(0.3473 0.0044 247.95)
+
+   JERARQUÍA, tomada del propio logo: ahí el carbón es la masa y el rojo es
+   el acento (el monograma A/P) y la regla que separa las dos palabras.
+   La app respeta eso:
+
+     carbón  → estructura y acciones (botones, encabezado, texto)
+     rojo    → identidad y acentos (la regla, el estado activo, los datos clave)
+
+   Y resuelve una colisión real: el rojo de marca es también el color
+   convencional de "borrar". Si Guardar y Archivar fueran los dos rojos, el
+   operario no los distinguiría. Por eso lo destructivo usa un rojo más
+   oscuro (#a8161b, 7.5:1) que nunca se confunde con el de marca.
+
+   El rojo de marca da 4.38:1 sobre blanco: alcanza para acentos, íconos,
+   bordes y texto grande, pero NO para texto de cuerpo (AA exige 4.5).
+   Por eso nunca se usa para leer.
+   ───────────────────────────────────────────────────────────── */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-archivo);
   --font-mono: var(--font-geist-mono);
+  /* Condensada, como el lettering del logo. Se usa en datos y etiquetas. */
+  --font-heading: var(--font-archivo);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* Un blanco apenas cálido: el blanco puro sobre el carbón vibra al sol. */
+  --background: oklch(0.9911 0.0015 106);
+  --foreground: oklch(0.2607 0.0044 248);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2607 0.0044 248);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2607 0.0044 248);
+
+  /* Carbón del logo: la acción principal. 11.4:1 sobre blanco. */
+  --primary: oklch(0.3473 0.0044 247.95);
+  --primary-foreground: oklch(0.9911 0.0015 106);
+
+  --secondary: oklch(0.9622 0.0025 247);
+  --secondary-foreground: oklch(0.3473 0.0044 247.95);
+  --muted: oklch(0.9622 0.0025 247);
+  --muted-foreground: oklch(0.5214 0.0083 248);
+  --accent: oklch(0.9622 0.0025 247);
+  --accent-foreground: oklch(0.3473 0.0044 247.95);
+
+  /* Rojo de marca: identidad y acento. Nunca texto de cuerpo. */
+  --brand: oklch(0.6026 0.2325 27.05);
+  --brand-foreground: oklch(1 0 0);
+
+  /* Destructivo: rojo más oscuro, para no confundirse con el de marca. */
+  --destructive: oklch(0.4694 0.1784 26.5);
+
+  --border: oklch(0.9109 0.0035 247);
+  --input: oklch(0.9109 0.0035 247);
+  --ring: oklch(0.6026 0.2325 27.05);
+
+  /* Serie de datos: azul y naranja, validados aparte para daltonismo. Se
+     mantienen fuera de la paleta de marca a propósito — si el caudal fuera
+     rojo, competiría con el acento y dejaría de leerse como dato. */
+  --chart-1: oklch(0.5385 0.1674 259.2);
+  --chart-2: oklch(0.6746 0.1793 41.4);
+  --chart-3: oklch(0.3473 0.0044 247.95);
+  --chart-4: oklch(0.5214 0.0083 248);
+  --chart-5: oklch(0.7 0.005 248);
+
+  /* Ángulos más secos que el default: el logo es todo diagonales y cortes
+     rectos, nada redondeado. */
+  --radius: 0.375rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  /* El oscuro parte del carbón del logo, no de un gris neutro cualquiera. */
+  --background: oklch(0.2019 0.004 248);
+  --foreground: oklch(0.9622 0.0025 247);
+  --card: oklch(0.2607 0.0044 248);
+  --card-foreground: oklch(0.9622 0.0025 247);
+  --popover: oklch(0.2607 0.0044 248);
+  --popover-foreground: oklch(0.9622 0.0025 247);
+
+  /* Sobre fondo oscuro el carbón desaparece: la acción principal se aclara. */
+  --primary: oklch(0.9622 0.0025 247);
+  --primary-foreground: oklch(0.2607 0.0044 248);
+
+  --secondary: oklch(0.3225 0.0044 248);
+  --secondary-foreground: oklch(0.9622 0.0025 247);
+  --muted: oklch(0.3225 0.0044 248);
+  --muted-foreground: oklch(0.7148 0.0083 248);
+  --accent: oklch(0.3225 0.0044 248);
+  --accent-foreground: oklch(0.9622 0.0025 247);
+
+  /* Rojo aclarado para el fondo oscuro: el de marca queda apagado ahí. */
+  --brand: oklch(0.6872 0.202 26.59);
+  --brand-foreground: oklch(0.2019 0.004 248);
+
+  --destructive: oklch(0.6872 0.202 26.59);
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.6872 0.202 26.59);
+
+  --chart-1: oklch(0.6215 0.1585 258.3);
+  --chart-2: oklch(0.6116 0.1755 41.1);
+  --chart-3: oklch(0.9622 0.0025 247);
+  --chart-4: oklch(0.7148 0.0083 248);
+  --chart-5: oklch(0.5 0.005 248);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+
+  /* Los títulos van apretados y en peso alto, como el lettering del logo. */
+  h1,
+  h2 {
+    letter-spacing: -0.02em;
+  }
+
+  /* Cifras de ancho fijo en todo dato técnico: las mediciones de un pozo se
+     comparan entre visitas, y con ancho variable las columnas bailan. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /**
+   * La regla roja del logo, donde separa ARENAS de Perforaciones.
+   * Es el único elemento decorativo de la app, y es un divisor de verdad:
+   * marca dónde termina la identidad y empieza el contenido.
+   */
+  .regla-marca {
+    background-color: var(--brand);
+    height: 3px;
+  }
+
+  /**
+   * Acento lateral para el ítem destacado de una lista. Mismo gesto que la
+   * regla, girado: el rojo señala, no rellena.
+   */
+  .acento-marca {
+    border-inline-start: 3px solid var(--brand);
+  }
 }

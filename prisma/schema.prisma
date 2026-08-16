@@ -1,0 +1,373 @@
+// Esquema de datos — Gestión e historial técnico de pozos de agua (ARENAS)
+//
+// Prisma 7: el generador es `prisma-client` (no `prisma-client-js`) y la URL de
+// conexión ya no vive acá — la CLI la toma de prisma.config.ts y el runtime la
+// recibe por el driver adapter (src/server/db.ts).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  CARGADOR
+  CLIENTE
+}
+
+enum TranscriptStatus {
+  NOT_REQUESTED // v1: el audio se guarda sin transcribir
+  PENDING
+  DONE
+  FAILED
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUTENTICACIÓN (modelos requeridos por @auth/prisma-adapter)
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String? // null si el usuario solo entra por Google
+  role          UserRole  @default(CLIENTE) // default más restrictivo
+  isActive      Boolean   @default(true)
+
+  accounts Account[]
+  sessions Session[]
+
+  /// Fincas a las que este usuario tiene acceso. Base de la autorización.
+  memberships FarmMember[]
+
+  // Trazabilidad de la carga
+  interventionsCreated Intervention[]      @relation("InterventionAuthor")
+  readingsCreated      WellStatusReading[] @relation("ReadingAuthor")
+  observationsCreated  Observation[]       @relation("ObservationAuthor")
+  receiptsCreated      Receipt[]           @relation("ReceiptAuthor")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────────────────────
+// NEGOCIO — FINCAS Y ACCESO
+// ─────────────────────────────────────────────────────────────
+
+model Farm {
+  id           String  @id @default(cuid())
+  name         String // Razón social / nombre de la finca
+  taxId        String? // CUIT
+  address      String?
+  city         String?
+  province     String?
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  notes        String? @db.Text
+  isActive     Boolean @default(true)
+
+  members  FarmMember[]
+  wells    Well[]
+  receipts Receipt[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([name])
+  @@index([deletedAt])
+}
+
+/// Puente N:N User ↔ Farm. Fuente de verdad de la autorización del rol CLIENTE.
+model FarmMember {
+  id     String @id @default(cuid())
+  farmId String
+  userId String
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([farmId, userId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// NEGOCIO — POZOS
+// ─────────────────────────────────────────────────────────────
+
+model Well {
+  id        String    @id @default(cuid())
+  farmId    String
+  name      String // "Pozo N° 1 - Sector Norte"
+  code      String? // identificador interno / catastral
+  latitude  Decimal?  @db.Decimal(10, 7)
+  longitude Decimal?  @db.Decimal(10, 7)
+  drilledAt DateTime? @db.Date // fecha de perforación original
+  isActive  Boolean   @default(true)
+  notes     String?   @db.Text
+
+  farm          Farm                @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  interventions Intervention[]
+  readings      WellStatusReading[]
+  observations  Observation[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([farmId, name]) // no puede haber dos "Pozo N° 1" en la misma finca
+  @@index([farmId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// MÓDULO A — INTERVENCIONES / SERVICIOS
+// ─────────────────────────────────────────────────────────────
+
+/// Catálogo extensible. Los 13 servicios base entran por seed con isSystem = true.
+model ServiceType {
+  id        String  @id @default(cuid())
+  name      String
+  slug      String  @unique // normalizado: evita duplicados por tipeo
+  icon      String? // nombre del icono Lucide para la card
+  isSystem  Boolean @default(false) // true = del seed, no borrable
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  interventions InterventionService[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Una visita al pozo. Contenedor de los módulos A + B + C (un solo Submit).
+model Intervention {
+  id          String   @id @default(cuid())
+  wellId      String
+  performedAt DateTime @db.Date // fecha del trabajo (≠ createdAt)
+  createdById String
+
+  well         Well                 @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  createdBy    User                 @relation("InterventionAuthor", fields: [createdById], references: [id])
+  services     InterventionService[]
+  reading      WellStatusReading? // módulo B de esta visita (1:1 opcional)
+  observations Observation[] // módulo C
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([wellId, performedAt])
+  @@index([createdById])
+}
+
+/// Selección múltiple de cards → una fila por servicio marcado.
+model InterventionService {
+  id             String  @id @default(cuid())
+  interventionId String
+  serviceTypeId  String
+  detail         String? @db.Text // aclaración puntual de ese servicio
+
+  intervention Intervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  serviceType  ServiceType  @relation(fields: [serviceTypeId], references: [id])
+
+  @@unique([interventionId, serviceTypeId])
+  @@index([serviceTypeId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// MÓDULO B — ESTADO TÉCNICO
+// ─────────────────────────────────────────────────────────────
+
+/// Catálogo de electrobombas, extensible al vuelo desde el combobox.
+model Pump {
+  id              String   @id @default(cuid())
+  label           String // texto que ve el usuario
+  normalizedLabel String   @unique // lowercase + trim: anti-duplicados
+  brand           String?
+  model           String?
+  horsePower      Decimal? @db.Decimal(6, 2)
+  isSystem        Boolean  @default(false)
+  isActive        Boolean  @default(true)
+
+  readings WellStatusReading[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Snapshot de mediciones. Todos los campos opcionales (rara vez se miden todos).
+/// interventionId nullable → permite una medición de control sin intervención.
+model WellStatusReading {
+  id             String   @id @default(cuid())
+  wellId         String
+  interventionId String?  @unique // 1:1 con la intervención, si existe
+  measuredAt     DateTime @db.Date
+  createdById    String
+
+  depthM         Decimal? @db.Decimal(8, 2) // Profundidad (m)
+  pumpDepthM     Decimal? @db.Decimal(8, 2) // Altura / profundidad de la bomba (m)
+  dynamicLevelM  Decimal? @db.Decimal(8, 2) // Nivel dinámico (m)
+  staticLevelM   Decimal? @db.Decimal(8, 2) // Nivel estático (m)
+  boreDiameterIn Decimal? @db.Decimal(6, 2) // Diámetro de perforación (pulgadas)
+  flowRateM3H    Decimal? @db.Decimal(8, 2) // Caudal (m³/h)
+  pumpId         String? // electrobomba instalada
+
+  well         Well          @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  intervention Intervention? @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  pump         Pump?         @relation(fields: [pumpId], references: [id])
+  createdBy    User          @relation("ReadingAuthor", fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([wellId, measuredAt]) // sostiene el gráfico de evolución
+  @@index([pumpId])
+  @@index([createdById])
+}
+
+// ─────────────────────────────────────────────────────────────
+// MÓDULO C — OBSERVACIONES Y NOTA DE VOZ
+// ─────────────────────────────────────────────────────────────
+
+model Observation {
+  id             String  @id @default(cuid())
+  wellId         String
+  interventionId String?
+  /// Nullable: una observación puede ser SOLO una nota de voz, sin texto.
+  /// La app garantiza que no exista una observación sin body y sin audio.
+  body           String? @db.Text
+  createdById    String
+
+  well         Well          @relation(fields: [wellId], references: [id], onDelete: Cascade)
+  intervention Intervention? @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  createdBy    User          @relation("ObservationAuthor", fields: [createdById], references: [id])
+  voiceNotes   VoiceNote[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([wellId, createdAt])
+  @@index([interventionId])
+  @@index([createdById])
+}
+
+/// v1 guarda solo el audio. Los campos de transcripción existen desde el día 1
+/// para poder enchufar la transcripción automática después, sin migración.
+model VoiceNote {
+  id            String @id @default(cuid())
+  observationId String
+  storagePath   String // path en el bucket privado
+  mimeType      String
+  durationSec   Int?
+  sizeBytes     Int?
+
+  transcript       String?          @db.Text
+  transcriptStatus TranscriptStatus @default(NOT_REQUESTED)
+  transcribedAt    DateTime?
+
+  observation Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([observationId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// REMITOS
+// ─────────────────────────────────────────────────────────────
+
+model Receipt {
+  id          String   @id @default(cuid())
+  farmId      String
+  issueDate   DateTime @db.Date // obligatorio
+  amount      Decimal  @db.Decimal(12, 2) // obligatorio
+  currency    String   @default("ARS")
+  number      String? // N° de remito, si lo tiene
+  description String?  @db.Text
+  createdById String
+
+  farm      Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  createdBy User           @relation("ReceiptAuthor", fields: [createdById], references: [id])
+  photos    ReceiptPhoto[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([farmId, issueDate])
+  @@index([createdById])
+}
+
+model ReceiptPhoto {
+  id          String @id @default(cuid())
+  receiptId   String
+  storagePath String // bucket privado → URL firmada bajo demanda
+  mimeType    String
+  sizeBytes   Int?
+  width       Int?
+  height      Int?
+  sortOrder   Int    @default(0)
+
+  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([receiptId])
+}

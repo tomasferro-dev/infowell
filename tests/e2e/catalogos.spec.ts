@@ -1,0 +1,95 @@
+import { expect, test } from '@playwright/test'
+
+import { limpiarCatalogo, login, marca } from './helpers'
+
+/**
+ * Catálogos extensibles. Lo crítico acá no es el alta sino la deduplicación:
+ * si "Bobinado" y "bobinado" pueden convivir, el catálogo se degrada solo.
+ */
+
+const EMAIL_ADMIN = process.env.SEED_ADMIN_EMAIL
+const CLAVE_ADMIN = process.env.SEED_ADMIN_PASSWORD
+
+test.skip(!EMAIL_ADMIN || !CLAVE_ADMIN, 'faltan credenciales del seed')
+
+// Los catálogos son globales: lo que creen estos tests quedaría a la vista del
+// cliente si no se limpia al terminar.
+test.afterAll(() => {
+  limpiarCatalogo(marca)
+})
+
+test.describe('catálogo de servicios', () => {
+  test('muestra los 13 servicios base marcados como no borrables', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/admin/servicios')
+
+    await expect(page.getByText('Perforación de pozo')).toBeVisible()
+    await expect(page.getByText('Estudio geológico')).toBeVisible()
+
+    // Los del seed llevan el badge "Base" y no ofrecen borrado en ningún lado.
+    await expect(page.getByText('Base').first()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Eliminar' })).toHaveCount(0)
+  })
+
+  test('avisa que ya existe en lugar de duplicar, ignorando tildes y mayúsculas', async ({
+    page,
+  }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/admin/servicios')
+
+    const antes = await page.getByRole('listitem').count()
+
+    // Mismo servicio del seed, escrito sin tilde y en minúsculas.
+    await page.getByLabel('Nuevo servicio').fill('perforacion de pozo')
+    await page.getByRole('button', { name: 'Agregar' }).click()
+
+    await expect(page.getByText(/ya existía/)).toBeVisible()
+
+    // Y lo importante: la lista no creció.
+    await expect(page.getByRole('listitem')).toHaveCount(antes)
+  })
+
+  test('desactivar un servicio lo saca de la lista de activos', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/admin/servicios')
+
+    const fila = page.getByRole('listitem').filter({ hasText: 'Bobinado' })
+    await fila.getByRole('button', { name: 'Desactivar' }).click()
+
+    await expect(fila.getByText('Inactivo')).toBeVisible()
+
+    // Se restaura para no dejar el catálogo alterado para las próximas corridas.
+    await fila.getByRole('button', { name: 'Activar' }).click()
+    await expect(fila.getByText('Inactivo')).toHaveCount(0)
+  })
+})
+
+test.describe('catálogo de electrobombas', () => {
+  test('crea una electrobomba y la reconoce como existente al repetirla', async ({ page }) => {
+    // Lleva la marca de la corrida para que el afterAll pueda limpiarlo.
+    const modelo = `Grundfos ${marca}`
+
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/admin/bombas')
+
+    await page.getByLabel('Nuevo electrobomba').fill(modelo)
+    await page.getByRole('button', { name: 'Agregar' }).click()
+    await expect(page.getByText(`«${modelo}» agregado.`)).toBeVisible()
+
+    // Mismo modelo con otra puntuación y espaciado: debe reconocerlo.
+    await page.getByLabel('Nuevo electrobomba').fill(`  ${modelo.toUpperCase()}.  `)
+    await page.getByRole('button', { name: 'Agregar' }).click()
+    await expect(page.getByText(/ya existía/)).toBeVisible()
+  })
+
+  test('se navega entre los dos catálogos', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/admin/servicios')
+
+    await page.getByRole('link', { name: 'Electrobombas' }).click()
+    await expect(page.getByRole('heading', { name: 'Electrobombas' })).toBeVisible()
+
+    await page.getByRole('link', { name: 'Servicios' }).click()
+    await expect(page.getByRole('heading', { name: 'Servicios' })).toBeVisible()
+  })
+})
