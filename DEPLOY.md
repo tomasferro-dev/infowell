@@ -4,20 +4,32 @@
 
 Cargalas en **Production** y **Preview** (Project Settings → Environment Variables):
 
-| Variable | Para qué | ¿Hace falta en el build? |
-| --- | --- | --- |
-| `DATABASE_URL` | Conexión de la app (pooler, puerto **6543**) | Sí |
-| `AUTH_SECRET` | Firma de las sesiones | Sí |
-| `NEXT_PUBLIC_SUPABASE_URL` | Storage (fotos y audios) | Sí |
-| `SUPABASE_SERVICE_ROLE_KEY` | Storage, solo del lado del servidor | Sí |
-| `DIRECT_URL` | Conexión directa (puerto **5432**), solo para migrar | No |
-| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Login con Google | No (opcionales) |
-
-`DIRECT_URL` no se usa en el build, pero conviene tenerla cargada igual: es la
-que necesitás si alguna vez corrés migraciones desde el entorno de Vercel.
+| Variable | Para qué |
+| --- | --- |
+| `DATABASE_URL` | Conexión de la app (pooler, puerto **6543**) |
+| `AUTH_SECRET` | Firma de las sesiones |
+| `NEXT_PUBLIC_SUPABASE_URL` | Storage (fotos y audios) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Storage, solo del lado del servidor |
+| `DIRECT_URL` | Conexión directa (puerto **5432**), solo para migrar |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Login con Google (opcionales) |
 
 Después de agregar o cambiar una variable hay que **volver a deployar**: Vercel
 no reconstruye solo.
+
+### El build no necesita ninguna
+
+Son todas de ejecución. El build compila sin ninguna variable cargada —hay una
+verificación de eso: borrar el `.env` y correr `npm run build` tiene que
+terminar bien.
+
+Esto es deliberado. Si un módulo lanzara un error al importarse por una
+variable faltante, `next build` se caería al recolectar los datos de las
+páginas, y un problema de configuración se disfrazaría de error de
+compilación. Por eso `src/server/storage.ts` crea su cliente en el primer uso
+y `src/server/db.ts` no lanza en el cuerpo del módulo.
+
+**Si agregás un módulo que lea `process.env`, no valides en el cuerpo del
+módulo: validá adentro de la función que lo usa.**
 
 ## Las migraciones NO corren en el build
 

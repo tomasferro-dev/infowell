@@ -8,10 +8,21 @@ import { PrismaClient } from '@/generated/prisma/client'
  * agota el límite de Postgres. Las migraciones usan DIRECT_URL — ver
  * prisma.config.ts.
  */
-const connectionString = process.env.DATABASE_URL
+/**
+ * Sin `throw` en el cuerpo del módulo, a propósito.
+ *
+ * `next build` importa cada ruta para recolectar sus datos; si este archivo
+ * lanzara al importarse, la falta de una variable de ejecución rompería el
+ * build. Con la cadena vacía, el error aparece en la primera consulta —donde
+ * corresponde— y el deploy no se cae por algo que no es de compilación.
+ */
+const connectionString = process.env.DATABASE_URL ?? ''
 
 if (!connectionString) {
-  throw new Error('Falta DATABASE_URL. Copiá .env.example a .env y completalo.')
+  // Avisa, pero no corta: el mensaje queda en los logs del servidor y el
+  // error real lo da la primera consulta. Sin esto, faltar la variable se
+  // manifestaría como un error críptico del driver de Postgres.
+  console.error('Falta DATABASE_URL: la app no va a poder consultar la base.')
 }
 
 const globalForPrisma = globalThis as unknown as {
