@@ -1,4 +1,4 @@
-import { ChevronLeft, FileText, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileText, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
@@ -72,8 +72,14 @@ export default async function RemitosPage({
             <li key={remito.id}>
               <Card>
                 <CardContent className="space-y-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <div className="min-w-0">
+                  {/* Solo el encabezado navega al detalle: si el enlace
+                      envolviera la tarjeta entera, tocar una miniatura
+                      abandonaría la página en vez de ampliar la foto. */}
+                  <Link
+                    href={`/fincas/${farmId}/remitos/${remito.id}`}
+                    className="hover:bg-accent/50 -m-2 flex items-center gap-3 rounded-md p-2 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
                       <p className="font-medium tabular-nums">
                         {formatearMonto(remito.amount, remito.currency)}
                       </p>
@@ -82,8 +88,8 @@ export default async function RemitosPage({
                         {remito.number ? ` · N° ${remito.number}` : ''}
                       </p>
                     </div>
-                    <p className="text-muted-foreground shrink-0 text-xs">{remito.autor}</p>
-                  </div>
+                    <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+                  </Link>
 
                   {remito.description ? (
                     <p className="text-sm whitespace-pre-wrap">{remito.description}</p>

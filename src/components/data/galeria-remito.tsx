@@ -1,53 +1,51 @@
 'use client'
 
-import { X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { VisorImagenes } from '@/components/data/visor-imagenes'
 
 export type FotoRemito = { id: string; storagePath: string }
 
 /**
- * Miniaturas con lightbox al tocar.
+ * Miniaturas con visor a pantalla completa.
  *
  * Las imágenes se piden por la ruta protegida, no por una URL de Storage: el
  * permiso se revalida en cada request. Por eso tampoco se usa next/image, que
  * no sabe seguir el redirect firmado.
  */
-export function GaleriaRemito({ fotos }: { fotos: FotoRemito[] }) {
+export function GaleriaRemito({
+  fotos,
+  columnas = 3,
+}: {
+  fotos: FotoRemito[]
+  /** 3 en el listado (miniaturas), 2 en el detalle (se ven mejor). */
+  columnas?: 2 | 3
+}) {
   const [indice, setIndice] = useState<number>()
-
-  useEffect(() => {
-    if (indice === undefined) return
-
-    function alTeclado(e: KeyboardEvent) {
-      if (e.key === 'Escape') setIndice(undefined)
-      if (e.key === 'ArrowRight') setIndice((i) => (i === undefined ? i : (i + 1) % fotos.length))
-      if (e.key === 'ArrowLeft')
-        setIndice((i) => (i === undefined ? i : (i - 1 + fotos.length) % fotos.length))
-    }
-
-    window.addEventListener('keydown', alTeclado)
-    return () => window.removeEventListener('keydown', alTeclado)
-  }, [indice, fotos.length])
 
   if (fotos.length === 0) return null
 
+  const imagenes = fotos.map((foto, i) => ({
+    id: foto.id,
+    src: `/api/files/remitos/${foto.storagePath}`,
+    alt: `Foto ${i + 1} del remito`,
+  }))
+
   return (
     <>
-      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {fotos.map((foto, i) => (
-          <li key={foto.id}>
+      <ul className={columnas === 2 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
+        {imagenes.map((imagen, i) => (
+          <li key={imagen.id}>
             <button
               type="button"
               onClick={() => setIndice(i)}
               aria-label={`Ampliar foto ${i + 1} de ${fotos.length}`}
-              className="aspect-square w-full overflow-hidden rounded-lg border"
+              className="aspect-square w-full overflow-hidden rounded-md border"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element -- ruta protegida con redirect firmado, next/image no la resuelve */}
+              {/* eslint-disable-next-line @next/next/no-img-element -- ruta protegida con redirect firmado */}
               <img
-                src={`/api/files/remitos/${foto.storagePath}`}
-                alt={`Foto ${i + 1} del remito`}
+                src={imagen.src}
+                alt={imagen.alt}
                 loading="lazy"
                 className="size-full object-cover"
               />
@@ -57,37 +55,11 @@ export function GaleriaRemito({ fotos }: { fotos: FotoRemito[] }) {
       </ul>
 
       {indice !== undefined ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Foto ${indice + 1} de ${fotos.length}`}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-          onClick={() => setIndice(undefined)}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- ídem */}
-          <img
-            src={`/api/files/remitos/${fotos[indice]!.storagePath}`}
-            alt={`Foto ${indice + 1} del remito, ampliada`}
-            className="max-h-full max-w-full object-contain"
-          />
-
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon"
-            onClick={() => setIndice(undefined)}
-            aria-label="Cerrar"
-            className="absolute top-4 right-4"
-          >
-            <X className="size-4" />
-          </Button>
-
-          {fotos.length > 1 ? (
-            <p className="absolute bottom-6 text-sm text-white/80 tabular-nums">
-              {indice + 1} / {fotos.length}
-            </p>
-          ) : null}
-        </div>
+        <VisorImagenes
+          imagenes={imagenes}
+          indiceInicial={indice}
+          onCerrar={() => setIndice(undefined)}
+        />
       ) : null}
     </>
   )

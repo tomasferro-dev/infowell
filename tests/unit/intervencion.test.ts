@@ -151,3 +151,62 @@ describe('crearIntervencionSchema — servicios y bomba', () => {
     expect(r.pumpId).toBeUndefined()
   })
 })
+
+/**
+ * Las notas de voz llegan como JSON en un campo repetido. El formato importa:
+ * si ruta, formato y duración se desalinearan, una nota quedaría con la
+ * duración de otra — y la duración es justo lo que no se puede recuperar del
+ * archivo, porque MediaRecorder no la escribe en la cabecera.
+ */
+describe('crearIntervencionSchema — notas de voz', () => {
+  const nota = (ruta: string, duracion: number) =>
+    JSON.stringify({ ruta, mime: 'audio/webm', duracion })
+
+  it('acepta varias notas en una misma intervención', () => {
+    const r = crearIntervencionSchema.parse({
+      ...base,
+      voiceNotes: [nota('finca-1/pozo-1/a.webm', 12), nota('finca-1/pozo-1/b.webm', 45)],
+    })
+
+    expect(r.voiceNotes).toHaveLength(2)
+    expect(r.voiceNotes[0]).toEqual({
+      ruta: 'finca-1/pozo-1/a.webm',
+      mime: 'audio/webm',
+      duracion: 12,
+    })
+    // Cada duración queda con SU nota, no cruzada con la otra.
+    expect(r.voiceNotes[1]?.duracion).toBe(45)
+  })
+
+  it('una nota de voz sola alcanza para que la visita sea válida', () => {
+    const r = crearIntervencionSchema.safeParse({
+      performedAt: HOY,
+      serviceTypeIds: [],
+      voiceNotes: [nota('finca-1/pozo-1/a.webm', 5)],
+    })
+
+    expect(r.success).toBe(true)
+  })
+
+  it('descarta las entradas que no son JSON válido', () => {
+    const r = crearIntervencionSchema.parse({
+      ...base,
+      voiceNotes: ['esto no es json', nota('finca-1/pozo-1/a.webm', 3)],
+    })
+
+    expect(r.voiceNotes).toHaveLength(1)
+  })
+
+  it('descarta las que les falta algún dato', () => {
+    const r = crearIntervencionSchema.parse({
+      ...base,
+      voiceNotes: [JSON.stringify({ ruta: 'x.webm' }), nota('finca-1/pozo-1/a.webm', 3)],
+    })
+
+    expect(r.voiceNotes).toHaveLength(1)
+  })
+
+  it('sin notas queda una lista vacía, no undefined', () => {
+    expect(crearIntervencionSchema.parse(base).voiceNotes).toEqual([])
+  })
+})

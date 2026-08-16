@@ -38,6 +38,7 @@ export async function crearIntervencionAction(
     ...Object.fromEntries(formData),
     // getAll: las cards marcadas mandan el mismo campo repetido.
     serviceTypeIds: formData.getAll('serviceTypeIds').filter((v): v is string => typeof v === 'string'),
+    voiceNotes: formData.getAll('voiceNotes').filter((v): v is string => typeof v === 'string'),
   })
 
   if (!parsed.success) {
@@ -49,23 +50,15 @@ export async function crearIntervencionAction(
     }
   }
 
-  const {
-    serviceTypeIds,
-    observations,
-    performedAt,
-    pumpId,
-    voiceStoragePath,
-    voiceMimeType,
-    voiceDurationSec,
-    ...mediciones
-  } = parsed.data
+  const { serviceTypeIds, observations, performedAt, pumpId, voiceNotes, ...mediciones } =
+    parsed.data
 
-  // La ruta la generó el servidor al firmar la subida, pero llega de vuelta
-  // desde el navegador: se revalida que apunte a ESTA finca antes de guardarla.
-  if (voiceStoragePath) {
-    const partes = interpretarRuta(voiceStoragePath)
+  // Las rutas las generó el servidor al firmar, pero vuelven desde el
+  // navegador: se revalida que TODAS apunten a ESTA finca antes de guardarlas.
+  for (const nota of voiceNotes) {
+    const partes = interpretarRuta(nota.ruta)
     if (!partes || partes.farmId !== farmId) {
-      return { error: 'La nota de voz no es válida' }
+      return { error: 'Alguna de las notas de voz no es válida' }
     }
   }
 
@@ -105,25 +98,21 @@ export async function crearIntervencionAction(
       })
     }
 
-    // Una observación existe si hay texto, audio, o ambos. Nunca vacía.
-    if (observations || voiceStoragePath) {
+    // Una observación existe si hay texto, audios, o ambos. Nunca vacía.
+    if (observations || voiceNotes.length > 0) {
       await tx.observation.create({
         data: {
           wellId,
           interventionId: intervencion.id,
           body: observations ?? null,
           createdById: actor.id,
-          ...(voiceStoragePath
-            ? {
-                voiceNotes: {
-                  create: {
-                    storagePath: voiceStoragePath,
-                    mimeType: voiceMimeType ?? 'audio/webm',
-                    durationSec: voiceDurationSec,
-                  },
-                },
-              }
-            : {}),
+          voiceNotes: {
+            create: voiceNotes.map((nota) => ({
+              storagePath: nota.ruta,
+              mimeType: nota.mime,
+              durationSec: nota.duracion,
+            })),
+          },
         },
       })
     }

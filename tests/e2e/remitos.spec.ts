@@ -224,3 +224,99 @@ test.describe('cuando Storage falla', () => {
     await expect(page.getByText(/Se cerró tu sesión/)).toBeVisible()
   })
 })
+
+/**
+ * Simula un arrastre vertical con el dedo.
+ *
+ * Los eventos se construyen dentro del navegador porque el constructor Touch
+ * exige identifier y target, que no se pueden pasar desde el runner.
+ */
+async function deslizar(locator: import('@playwright/test').Locator, pixeles: number) {
+  await locator.evaluate((el, dy) => {
+    const toque = (y: number) =>
+      new Touch({ identifier: 1, target: el, clientX: 180, clientY: y })
+
+    el.dispatchEvent(
+      new TouchEvent('touchstart', { touches: [toque(200)], bubbles: true }),
+    )
+    el.dispatchEvent(
+      new TouchEvent('touchmove', { touches: [toque(200 + dy)], bubbles: true }),
+    )
+    el.dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true }))
+  }, pixeles)
+}
+
+test.describe('detalle del remito', () => {
+  /** Crea un remito con dos fotos y devuelve la URL de su detalle. */
+  async function crearRemitoConFotos(page: import('@playwright/test').Page, numero: string) {
+    await login(page, `${marca}-cargador@test.local`)
+
+    await page.goto(urlNuevo)
+    await page.getByLabel('Monto').fill('3300')
+    await page.getByLabel('N° de remito').fill(numero)
+    await page.locator('input[type="file"]').nth(1).setInputFiles([
+      { name: 'a.png', mimeType: 'image/png', buffer: PNG_MINIMO },
+      { name: 'b.png', mimeType: 'image/png', buffer: PNG_MINIMO },
+    ])
+    await expect(page.getByText('Subiendo fotos…')).toHaveCount(0, { timeout: 20_000 })
+    await page.getByRole('button', { name: 'Guardar remito' }).click()
+    await expect(page).toHaveURL(urlRemitos)
+
+    // El encabezado de la tarjeta navega al detalle; las miniaturas no.
+    await page.getByRole('listitem').filter({ hasText: numero }).getByRole('link').click()
+    await expect(page).toHaveURL(/\/remitos\/[a-z0-9]+$/)
+  }
+
+  test('desde el listado se llega al detalle con la grilla de fotos', async ({ page }) => {
+    await crearRemitoConFotos(page, `DET-${Date.now()}`)
+
+    await expect(page.getByRole('heading', { name: '2 fotos' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Ampliar foto 2/ })).toBeVisible()
+  })
+
+  test('el visor bloquea el scroll de la página de atrás', async ({ page }) => {
+    await crearRemitoConFotos(page, `SCR-${Date.now()}`)
+
+    const overflowAntes = await page.evaluate(() => document.body.style.overflow)
+
+    await page.getByRole('button', { name: /Ampliar foto 1/ }).click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+
+    // Con el visor abierto, el documento no puede scrollear.
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden')
+
+    // Acotado al visor: "Cerrar" también matchea "Cerrar sesión" del encabezado.
+    await page.getByRole('dialog').getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // Y al cerrar queda exactamente como estaba.
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe(overflowAntes)
+  })
+
+  test('deslizar hacia abajo cierra el visor', async ({ page }) => {
+    await crearRemitoConFotos(page, `SWI-${Date.now()}`)
+
+    await page.getByRole('button', { name: /Ampliar foto 1/ }).click()
+    const visor = page.getByRole('dialog')
+    await expect(visor).toBeVisible()
+
+    // Gesto de arrastre vertical, el mismo de la galería del teléfono.
+    await deslizar(visor, 250)
+
+    await expect(visor).toHaveCount(0)
+    // Y el scroll vuelve a funcionar.
+    expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden')
+  })
+
+  test('un arrastre corto NO cierra el visor', async ({ page }) => {
+    await crearRemitoConFotos(page, `COR-${Date.now()}`)
+
+    await page.getByRole('button', { name: /Ampliar foto 1/ }).click()
+    const visor = page.getByRole('dialog')
+
+    // 40px: un movimiento accidental del dedo no debe cerrar la foto.
+    await deslizar(visor, 40)
+
+    await expect(visor).toBeVisible()
+  })
+})

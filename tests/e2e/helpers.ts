@@ -24,7 +24,7 @@ export type DatosTest = {
 }
 
 function correrRunner(
-  comando: 'setup' | 'teardown' | 'teardown-catalogo',
+  comando: 'setup' | 'teardown' | 'teardown-catalogo' | 'notas-de-voz',
   marcaCorrida: string,
 ) {
   const salida = execFileSync('npx', ['tsx', RUNNER, comando, marcaCorrida], {
@@ -44,6 +44,11 @@ export function montarDatos(marcaCorrida: string): DatosTest {
 
 export function limpiarDatos(marcaCorrida: string) {
   correrRunner('teardown', marcaCorrida)
+}
+
+/** Siembra una intervención con dos notas de voz de duraciones distintas. */
+export function sembrarNotasDeVoz(marcaCorrida: string): { wellId: string; farmId: string } {
+  return correrRunner('notas-de-voz', marcaCorrida)
 }
 
 /** Borra los items de catálogo creados por los tests que nadie referencia. */

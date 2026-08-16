@@ -26,6 +26,15 @@ const idOpcional = z
   .transform((v) => (v === '' ? undefined : v))
   .optional()
 
+/** Referencia a un audio ya guardado en Storage. */
+const notaDeVozSchema = z.object({
+  ruta: z.string().min(1),
+  mime: z.string().min(1),
+  duracion: z.number().int().min(0).max(24 * 60 * 60),
+})
+
+export type NotaDeVoz = z.infer<typeof notaDeVozSchema>
+
 export const crearIntervencionSchema = z
   .object({
     performedAt: z
@@ -61,18 +70,30 @@ export const crearIntervencionSchema = z
       .transform((v) => (v === '' ? undefined : v))
       .optional(),
 
-    // La nota de voz ya está en Storage cuando llega acá: el formulario solo
-    // trae su referencia. El audio nunca pasa por la Server Action.
-    voiceStoragePath: idOpcional,
-    voiceMimeType: idOpcional,
-    voiceDurationSec: z
-      .string()
-      .trim()
-      .transform((v) => (v === '' ? undefined : Number(v)))
-      .optional()
-      .refine((v) => v === undefined || (Number.isFinite(v) && v >= 0), {
-        message: 'Duración inválida',
-      }),
+    /**
+     * Notas de voz ya subidas a Storage: el formulario solo trae sus
+     * referencias, nunca el audio.
+     *
+     * Cada una llega como un JSON en un mismo campo repetido. Se eligió así en
+     * vez de tres arreglos paralelos (rutas, formatos, duraciones) porque
+     * esos se desalinean apenas falta un dato, y ahí una nota quedaría con la
+     * duración de otra.
+     */
+    voiceNotes: z
+      .array(z.string())
+      .default([])
+      .transform((crudas) =>
+        crudas
+          .map((cruda) => {
+            try {
+              return JSON.parse(cruda) as unknown
+            } catch {
+              return null
+            }
+          })
+          .filter((v): v is NotaDeVoz => notaDeVozSchema.safeParse(v).success)
+          .map((v) => notaDeVozSchema.parse(v)),
+      ),
   })
   /**
    * El nivel dinámico se mide con la bomba en marcha: el agua está siempre a
@@ -98,7 +119,7 @@ export const crearIntervencionSchema = z
       d.serviceTypeIds.length > 0 ||
       d.observations !== undefined ||
       // Una nota de voz sola alcanza: es contenido real de la visita.
-      d.voiceStoragePath !== undefined ||
+      d.voiceNotes.length > 0 ||
       [
         d.depthM,
         d.pumpDepthM,

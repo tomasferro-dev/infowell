@@ -3,19 +3,30 @@
 import { Loader2, Mic, RotateCcw, Square, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
+import { ReproductorAudio } from '@/components/data/reproductor-audio'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { describirFalloDeFirma } from '@/lib/subidas'
 import { cn } from '@/lib/utils'
 
 /**
- * Grabador de nota de voz.
+ * Grabador de notas de voz. Admite VARIAS por intervención.
  *
  * El punto frágil es el formato: MediaRecorder no soporta lo mismo en todos
  * lados. Chrome y Android graban webm/opus; iOS Safari NO soporta webm y graba
  * mp4. Por eso el tipo se elige preguntando, nunca fijándolo.
  *
- * El audio se sube a Storage apenas se termina de grabar, y el formulario solo
- * lleva la ruta resultante: así el archivo no pasa por la Server Action, que
+ * Cada audio se sube a Storage apenas se termina de grabar, y el formulario
+ * solo lleva su referencia: el archivo nunca pasa por la Server Action, que
  * tiene límite de tamaño.
  */
 
@@ -41,40 +52,43 @@ function formatearDuracion(segundos: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-type Estado = 'inicial' | 'grabando' | 'subiendo' | 'listo' | 'error'
+type Nota = {
+  id: string
+  ruta: string
+  mime: string
+  duracion: number
+  urlLocal: string
+}
+
+type Pendiente = { blob: Blob; mime: string; duracion: number; urlLocal: string }
+
+type Estado = 'inicial' | 'grabando' | 'subiendo' | 'error'
 
 export function VoiceRecorder({
   farmId,
   recursoId,
-  /** Máximo razonable para una nota de campo. */
+  name = 'voiceNotes',
   maxSegundos = 300,
 }: {
   farmId: string
   recursoId: string
+  name?: string
   maxSegundos?: number
 }) {
+  const [notas, setNotas] = useState<Nota[]>([])
   const [estado, setEstado] = useState<Estado>('inicial')
   const [segundos, setSegundos] = useState(0)
   const [mensaje, setMensaje] = useState<string>()
-  const [urlPrevia, setUrlPrevia] = useState<string>()
-  const [subido, setSubido] = useState<{ ruta: string; mime: string; duracion: number }>()
+  const [aBorrar, setABorrar] = useState<Nota>()
+
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
   const intervaloRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const duracionRef = useRef(0)
-  /**
-   * La última grabación, guardada para poder reintentar.
-   *
-   * Si la subida falla por algo del servidor, el técnico ya habló: perder el
-   * audio y obligarlo a repetir todo es la peor respuesta posible.
-   */
-  const grabacionRef = useRef<{ blob: Blob; mime: string; duracion: number } | null>(null)
+  /** Marca de tiempo del inicio: la duración se calcula con esto, no contando. */
+  const inicioRef = useRef(0)
+  /** La última grabación que falló al subir, para poder reintentarla. */
+  const pendienteRef = useRef<Pendiente | null>(null)
 
-  /**
-   * Detección de soporte sin efecto ni setState: es un valor que solo existe en
-   * el cliente. En el servidor se asume soportado para que el HTML coincida y
-   * no haya error de hidratación.
-   */
   const soportado = useSyncExternalStore(
     () => () => {},
     () =>
@@ -85,13 +99,11 @@ export function VoiceRecorder({
     () => true,
   )
 
-  // Libera la URL del objeto al desmontar: si no, queda el blob en memoria.
   useEffect(() => {
     return () => {
-      if (urlPrevia) URL.revokeObjectURL(urlPrevia)
       if (intervaloRef.current) clearInterval(intervaloRef.current)
     }
-  }, [urlPrevia])
+  }, [])
 
   function detenerCronometro() {
     if (intervaloRef.current) {
@@ -100,8 +112,8 @@ export function VoiceRecorder({
     }
   }
 
-  async function subir(blob: Blob, mime: string, duracion: number) {
-    grabacionRef.current = { blob, mime, duracion }
+  async function subir(pendiente: Pendiente) {
+    pendienteRef.current = pendiente
     setEstado('subiendo')
     setMensaje(undefined)
 
@@ -109,7 +121,12 @@ export function VoiceRecorder({
       const respuesta = await fetch('/api/uploads/sign', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tipo: 'nota-voz', farmId, recursoId, mimeType: mime }),
+        body: JSON.stringify({
+          tipo: 'nota-voz',
+          farmId,
+          recursoId,
+          mimeType: pendiente.mime,
+        }),
       })
 
       if (!respuesta.ok) throw new Error(await describirFalloDeFirma(respuesta))
@@ -119,18 +136,28 @@ export function VoiceRecorder({
       // archivo va con clave vacía.
       const cuerpo = new FormData()
       cuerpo.append('cacheControl', '3600')
-      cuerpo.append('', blob)
+      cuerpo.append('', pendiente.blob)
 
       const subida = await fetch(signedUrl, { method: 'PUT', body: cuerpo })
       if (!subida.ok) {
         throw new Error(`El servidor de archivos rechazó el audio (${subida.status}).`)
       }
 
-      setSubido({ ruta, mime, duracion })
-      setEstado('listo')
+      setNotas((previas) => [
+        ...previas,
+        {
+          id: ruta,
+          ruta,
+          mime: pendiente.mime,
+          duracion: pendiente.duracion,
+          urlLocal: pendiente.urlLocal,
+        },
+      ])
+      pendienteRef.current = null
+      setEstado('inicial')
+      setSegundos(0)
     } catch (error) {
       setEstado('error')
-      // La grabación NO se descarta: queda para reintentar sin volver a hablar.
       setMensaje(error instanceof Error ? error.message : 'No se pudo subir la nota de voz.')
     }
   }
@@ -145,7 +172,7 @@ export function VoiceRecorder({
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
       recorderRef.current = recorder
       chunksRef.current = []
-      duracionRef.current = 0
+      inicioRef.current = Date.now()
       setSegundos(0)
 
       recorder.ondataavailable = (e) => {
@@ -160,23 +187,23 @@ export function VoiceRecorder({
         const tipo = recorder.mimeType || mime || 'audio/webm'
         const blob = new Blob(chunksRef.current, { type: tipo })
 
-        setUrlPrevia((previa) => {
-          if (previa) URL.revokeObjectURL(previa)
-          return URL.createObjectURL(blob)
-        })
+        // La duración se mide con relojes, no contando intervalos: si el
+        // navegador pausa los timers (pantalla apagada, app en segundo plano)
+        // el conteo se desfasa del audio real.
+        const duracion = Math.max(1, Math.round((Date.now() - inicioRef.current) / 1000))
 
-        void subir(blob, tipo, duracionRef.current)
+        void subir({ blob, mime: tipo, duracion, urlLocal: URL.createObjectURL(blob) })
       }
 
       recorder.start()
       setEstado('grabando')
 
       intervaloRef.current = setInterval(() => {
-        duracionRef.current += 1
-        setSegundos(duracionRef.current)
+        const transcurridos = Math.floor((Date.now() - inicioRef.current) / 1000)
+        setSegundos(transcurridos)
 
-        if (duracionRef.current >= maxSegundos) detener()
-      }, 1000)
+        if (transcurridos >= maxSegundos) detener()
+      }, 250)
     } catch {
       setEstado('error')
       setMensaje('No se pudo acceder al micrófono. Revisá los permisos del navegador.')
@@ -188,22 +215,24 @@ export function VoiceRecorder({
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
   }
 
-  /** Vuelve a intentar con el audio que ya está grabado, sin regrabar. */
+  /** Reintenta la subida que falló, sin volver a grabar. */
   function reintentar() {
-    const grabacion = grabacionRef.current
-    if (!grabacion) return
-
-    void subir(grabacion.blob, grabacion.mime, grabacion.duracion)
+    if (pendienteRef.current) void subir(pendienteRef.current)
   }
 
-  function descartar() {
-    if (urlPrevia) URL.revokeObjectURL(urlPrevia)
-    setUrlPrevia(undefined)
-    setSubido(undefined)
-    setSegundos(0)
+  function descartarPendiente() {
+    if (pendienteRef.current) URL.revokeObjectURL(pendienteRef.current.urlLocal)
+    pendienteRef.current = null
     setEstado('inicial')
+    setSegundos(0)
     setMensaje(undefined)
-    grabacionRef.current = null
+  }
+
+  /** Quita una nota ya subida. Solo se llama desde la confirmación. */
+  function borrarNota(nota: Nota) {
+    URL.revokeObjectURL(nota.urlLocal)
+    setNotas((previas) => previas.filter((n) => n.id !== nota.id))
+    setABorrar(undefined)
   }
 
   if (!soportado) {
@@ -217,62 +246,55 @@ export function VoiceRecorder({
 
   return (
     <div className="space-y-3">
-      {/* Lo que viaja en el submit: solo la referencia, nunca el audio. */}
-      {subido ? (
-        <>
-          <input type="hidden" name="voiceStoragePath" value={subido.ruta} />
-          <input type="hidden" name="voiceMimeType" value={subido.mime} />
-          <input type="hidden" name="voiceDurationSec" value={subido.duracion} />
-        </>
+      {/* Cada nota viaja como un único campo JSON: así la ruta, el formato y la
+          duración no pueden desalinearse entre sí al llegar al servidor. */}
+      {notas.map((nota) => (
+        <input
+          key={nota.id}
+          type="hidden"
+          name={name}
+          value={JSON.stringify({
+            ruta: nota.ruta,
+            mime: nota.mime,
+            duracion: nota.duracion,
+          })}
+        />
+      ))}
+
+      {notas.length > 0 ? (
+        <ul className="space-y-2">
+          {notas.map((nota, i) => (
+            <li key={nota.id} className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground text-xs font-medium">
+                  Nota {i + 1} · {formatearDuracion(nota.duracion)}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setABorrar(nota)}
+                  aria-label={`Borrar nota de voz ${i + 1}`}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+              <ReproductorAudio src={nota.urlLocal} duracionSeg={nota.duracion} />
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {estado === 'inicial' ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={empezar}
-          className="h-12 w-full text-base"
-        >
+        <Button type="button" variant="outline" onClick={empezar} className="h-12 w-full text-base">
           <Mic className="size-4" />
-          Grabar nota de voz
+          {notas.length === 0 ? 'Grabar nota de voz' : 'Grabar otra nota'}
         </Button>
-      ) : null}
-
-      {/* Falló la subida pero la grabación sigue en memoria: se reintenta sin
-          volver a hablar, y también se puede escuchar mientras tanto. */}
-      {estado === 'error' ? (
-        <div className="border-destructive space-y-3 rounded-lg border p-3">
-          {urlPrevia ? <audio controls src={urlPrevia} className="w-full" /> : null}
-
-          <div className="flex gap-2">
-            {grabacionRef.current ? (
-              <Button
-                type="button"
-                onClick={reintentar}
-                className="h-12 flex-1 text-base"
-              >
-                <RotateCcw className="size-4" />
-                Reintentar
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={descartar}
-              className="h-12 text-base"
-            >
-              Descartar
-            </Button>
-          </div>
-        </div>
       ) : null}
 
       {estado === 'grabando' ? (
         <div className="flex items-center gap-3 rounded-lg border p-3">
-          <span
-            aria-hidden
-            className="bg-destructive size-3 shrink-0 animate-pulse rounded-full"
-          />
+          <span aria-hidden className="bg-destructive size-3 shrink-0 animate-pulse rounded-full" />
           <span className="flex-1 tabular-nums" role="timer" aria-live="off">
             {formatearDuracion(segundos)}
           </span>
@@ -290,16 +312,41 @@ export function VoiceRecorder({
         </p>
       ) : null}
 
-      {estado === 'listo' && urlPrevia ? (
-        <div className="space-y-2 rounded-lg border p-3">
-          <p className="text-sm font-medium">
-            Nota de voz lista · {formatearDuracion(subido?.duracion ?? 0)}
-          </p>
-          <audio controls src={urlPrevia} className="w-full" />
-          <Button type="button" variant="ghost" size="sm" onClick={descartar}>
-            <Trash2 className="size-4" />
-            Descartar y grabar otra
-          </Button>
+      {/* Falló la subida pero la grabación sigue en memoria: se reintenta sin
+          volver a hablar. */}
+      {estado === 'error' ? (
+        <div className="border-destructive space-y-3 rounded-lg border p-3">
+          {pendienteRef.current ? (
+            <>
+              <ReproductorAudio
+                src={pendienteRef.current.urlLocal}
+                duracionSeg={pendienteRef.current.duracion}
+              />
+              <div className="flex gap-2">
+                <Button type="button" onClick={reintentar} className="h-12 flex-1 text-base">
+                  <RotateCcw className="size-4" />
+                  Reintentar
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={descartarPendiente}
+                  className="h-12 text-base"
+                >
+                  Descartar
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={descartarPendiente}
+              className="h-12 w-full text-base"
+            >
+              Entendido
+            </Button>
+          )}
         </div>
       ) : null}
 
@@ -310,9 +357,30 @@ export function VoiceRecorder({
       ) : null}
 
       <p className="text-muted-foreground text-xs">
-        Máximo {Math.round(maxSegundos / 60)} minutos. Se guarda el audio; la transcripción
-        automática queda para más adelante.
+        Podés grabar varias notas. Máximo {Math.round(maxSegundos / 60)} minutos cada una.
       </p>
+
+      {/* Confirmación: borrar una nota es irreversible y el botón queda al lado
+          del de reproducir, así que un toque de más costaría la grabación. */}
+      <AlertDialog open={!!aBorrar} onOpenChange={(abierto) => !abierto && setABorrar(undefined)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar esta nota de voz?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La grabación se pierde y no se puede recuperar. Vas a tener que volver a grabarla.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Conservarla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => aBorrar && borrarNota(aBorrar)}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

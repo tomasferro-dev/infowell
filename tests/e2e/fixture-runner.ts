@@ -75,6 +75,57 @@ async function setup(marca: string) {
   }
 }
 
+/**
+ * Crea una intervención con DOS notas de voz de duraciones distintas.
+ *
+ * Se siembra por Prisma y no manejando el formulario porque no hay micrófono
+ * en Playwright. Lo que interesa verificar es la lectura: que cada nota se
+ * muestre con SU duración, que es justo lo que el archivo no trae.
+ */
+async function notasDeVoz(marca: string) {
+  const pozo = await prisma.well.findFirstOrThrow({
+    where: { name: `Pozo ${marca}` },
+    select: { id: true, farmId: true },
+  })
+
+  const autor = await prisma.user.findFirstOrThrow({
+    where: { email: { contains: marca } },
+    select: { id: true },
+  })
+
+  const intervencion = await prisma.intervention.create({
+    data: {
+      wellId: pozo.id,
+      performedAt: new Date(),
+      createdById: autor.id,
+      observations: {
+        create: {
+          wellId: pozo.id,
+          body: 'Visita con dos notas de voz.',
+          createdById: autor.id,
+          voiceNotes: {
+            create: [
+              {
+                storagePath: `${pozo.farmId}/${pozo.id}/corta.webm`,
+                mimeType: 'audio/webm',
+                durationSec: 7,
+              },
+              {
+                storagePath: `${pozo.farmId}/${pozo.id}/larga.webm`,
+                mimeType: 'audio/webm',
+                durationSec: 132,
+              },
+            ],
+          },
+        },
+      },
+    },
+    select: { id: true },
+  })
+
+  return { intervencionId: intervencion.id, wellId: pozo.id, farmId: pozo.farmId }
+}
+
 async function teardown(marca: string) {
   // Borrado real, no baja lógica: son datos de prueba, no historial del cliente.
   //
@@ -110,7 +161,9 @@ async function main() {
       ? await setup(marca)
       : comando === 'teardown-catalogo'
         ? await teardownCatalogo(marca)
-        : await teardown(marca)
+        : comando === 'notas-de-voz'
+          ? await notasDeVoz(marca)
+          : await teardown(marca)
 
   // El spec lee esto por stdout.
   console.log(JSON.stringify(resultado))

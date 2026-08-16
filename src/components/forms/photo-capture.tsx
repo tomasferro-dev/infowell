@@ -4,6 +4,7 @@ import imageCompression from 'browser-image-compression'
 import { Camera, ImagePlus, Loader2, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 
+import { VisorImagenes } from '@/components/data/visor-imagenes'
 import { Button } from '@/components/ui/button'
 import { describirFalloDeFirma } from '@/lib/subidas'
 import { cn } from '@/lib/utils'
@@ -38,7 +39,7 @@ export function PhotoCapture({
 }) {
   const [fotos, setFotos] = useState<Foto[]>([])
   const [mensaje, setMensaje] = useState<string>()
-  const [ampliada, setAmpliada] = useState<Foto>()
+  const [ampliada, setAmpliada] = useState<number>()
   const inputCamara = useRef<HTMLInputElement>(null)
   const inputGaleria = useRef<HTMLInputElement>(null)
 
@@ -191,7 +192,7 @@ export function PhotoCapture({
               >
                 <button
                   type="button"
-                  onClick={() => !foto.subiendo && setAmpliada(foto)}
+                  onClick={() => !foto.subiendo && setAmpliada(indice)}
                   className="size-full"
                   aria-label={`Ampliar foto ${indice + 1}`}
                 >
@@ -255,33 +256,17 @@ export function PhotoCapture({
 
       {mensaje ? <p className="text-destructive text-sm font-medium">{mensaje}</p> : null}
 
-      {/* Lightbox: se cierra tocando cualquier lado o con Escape. */}
-      {ampliada ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Foto ampliada"
-          onClick={() => setAmpliada(undefined)}
-          onKeyDown={(e) => e.key === 'Escape' && setAmpliada(undefined)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- blob local */}
-          <img
-            src={ampliada.previewUrl}
-            alt="Foto del remito ampliada"
-            className="max-h-full max-w-full object-contain"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon"
-            onClick={() => setAmpliada(undefined)}
-            aria-label="Cerrar"
-            className="absolute top-4 right-4"
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
+      {/* Mismo visor que en el detalle del remito: un solo gesto en toda la app. */}
+      {ampliada !== undefined ? (
+        <VisorImagenes
+          imagenes={fotos.map((f, i) => ({
+            id: f.id,
+            src: f.previewUrl,
+            alt: `Foto ${i + 1} del remito`,
+          }))}
+          indiceInicial={ampliada}
+          onCerrar={() => setAmpliada(undefined)}
+        />
       ) : null}
     </div>
   )

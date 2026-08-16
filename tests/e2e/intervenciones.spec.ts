@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test'
 
-import { limpiarCatalogo, limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
+import {
+  limpiarCatalogo,
+  limpiarDatos,
+  login,
+  marca,
+  montarDatos,
+  sembrarNotasDeVoz,
+  type DatosTest,
+} from './helpers'
 
 /**
  * El flujo central del producto: cargar una intervención con los tres módulos
@@ -138,5 +146,42 @@ test.describe('permisos sobre el historial', () => {
 
     const respuesta = await page.goto(urlNueva)
     expect(respuesta?.status()).toBe(404)
+  })
+})
+
+/**
+ * Notas de voz en el historial.
+ *
+ * No hay micrófono en Playwright, así que los audios se siembran por Prisma.
+ * Lo que importa verificar es la LECTURA: que cada nota muestre SU duración.
+ * Ese es justamente el dato que el archivo no trae —MediaRecorder no lo
+ * escribe en la cabecera— y por el que el reproductor nativo mostraba tiempos
+ * disparatados.
+ */
+test.describe('notas de voz en el historial', () => {
+  test('cada nota muestra su propia duración, no la del archivo', async ({ page }) => {
+    sembrarNotasDeVoz(marca)
+
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(urlPozo)
+
+    // Numeradas, porque hay más de una.
+    await expect(page.getByText('Nota de voz 1')).toBeVisible()
+    await expect(page.getByText('Nota de voz 2')).toBeVisible()
+
+    // 7 segundos y 2:12: cada una con la suya, sin cruzarse.
+    await expect(page.getByText('0:00 / 0:07')).toBeVisible()
+    await expect(page.getByText('0:00 / 2:12')).toBeVisible()
+
+    // Y con controles propios, no el reproductor nativo del navegador.
+    await expect(page.getByRole('button', { name: 'Reproducir nota de voz' })).toHaveCount(2)
+  })
+
+  test('el cliente también las escucha: son de su pozo', async ({ page }) => {
+    await login(page, `${marca}-cliente@test.local`)
+    await page.goto(urlPozo)
+
+    await expect(page.getByText('0:00 / 0:07')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Reproducir nota de voz' }).first()).toBeVisible()
   })
 })

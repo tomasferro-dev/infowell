@@ -1,6 +1,7 @@
 import * as Icons from 'lucide-react'
 import { Mic, Wrench } from 'lucide-react'
 
+import { ReproductorAudio } from '@/components/data/reproductor-audio'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import type { MedicionSerializada } from '@/server/queries/interventions'
@@ -21,13 +22,6 @@ export type ItemTimeline = {
   servicios: { id: string; name: string; icon: string | null }[]
   medicion: MedicionSerializada | null
   observaciones: { id: string; body: string | null; voiceNotes: NotaDeVoz[] }[]
-}
-
-function duracion(segundos: number | null) {
-  if (segundos == null) return null
-  const m = Math.floor(segundos / 60)
-  const s = segundos % 60
-  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 function Icono({ nombre }: { nombre: string | null }) {
@@ -113,20 +107,19 @@ export function TimelinePozo({ items }: { items: ItemTimeline[] }) {
                   <div key={o.id} className="bg-muted/50 space-y-2 rounded-md p-3">
                     {o.body ? <p className="text-sm whitespace-pre-wrap">{o.body}</p> : null}
 
-                    {o.voiceNotes.map((nota) => (
+                    {o.voiceNotes.map((nota, i) => (
                       <div key={nota.id} className="space-y-1">
                         <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
                           <Mic className="size-3" />
-                          Nota de voz
-                          {duracion(nota.durationSec) ? ` · ${duracion(nota.durationSec)}` : ''}
+                          {o.voiceNotes.length > 1 ? `Nota de voz ${i + 1}` : 'Nota de voz'}
                         </p>
                         {/* La URL no se guarda en la base: se pide por la ruta
-                            protegida, que revalida el permiso en cada request. */}
-                        <audio
-                          controls
-                          preload="none"
+                            protegida, que revalida el permiso en cada request.
+                            La duración sale de la base, no del archivo: los
+                            audios de MediaRecorder no la traen en la cabecera. */}
+                        <ReproductorAudio
                           src={`/api/files/notas-voz/${nota.storagePath}`}
-                          className="w-full"
+                          duracionSeg={nota.durationSec}
                         />
                         {nota.transcript ? (
                           <p className="text-sm whitespace-pre-wrap italic">{nota.transcript}</p>
