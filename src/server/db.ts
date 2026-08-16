@@ -31,27 +31,22 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 /**
- * Límites de tiempo, para que nada se quede colgado.
+ * Tiempo máximo para conseguir una conexión.
  *
- * Sin estos valores, una base que no responde —Supabase pausa los proyectos
- * gratuitos tras una semana sin uso, y el primer pedido después tarda en
- * despertarla— deja el request esperando indefinidamente: el usuario ve la
- * pantalla trabada sin ningún error, que es lo peor de los dos mundos.
+ * Sin esto, una base que no responde —Supabase pausa los proyectos gratuitos
+ * tras una semana sin uso, y el primer pedido después tarda en despertarla—
+ * deja el request esperando indefinidamente: el usuario ve la pantalla trabada
+ * sin ningún error, que es lo peor de los dos mundos. Con el límite, falla en
+ * 20 segundos y la pantalla de error ofrece reintentar.
  *
- * Fallar en 15 segundos permite mostrar un mensaje y ofrecer reintentar.
+ * Es lo ÚNICO que se toca del pool. Se probó también fijar `max`,
+ * `idleTimeoutMillis` y `statement_timeout`, y esa combinación producía
+ * `DriverAdapterError: ConnectionClosed` en medio de las transacciones: el
+ * pool cerraba conexiones que el cliente todavía tenía en uso. Los valores por
+ * defecto de pg funcionan bien con el pooler de Supabase; no conviene
+ * cambiarlos sin una razón medida.
  */
-const adapter = new PrismaPg({
-  connectionString,
-  // Tiempo para conseguir una conexión del pool.
-  connectionTimeoutMillis: 15_000,
-  // Corta consultas desbocadas del lado del servidor de base.
-  statement_timeout: 20_000,
-  // Cierra las conexiones ociosas: en serverless cada instancia tiene su pool
-  // y dejarlas abiertas consume el cupo del plan gratuito.
-  idleTimeoutMillis: 10_000,
-  // Pocas conexiones por instancia: la concurrencia la maneja el pooler.
-  max: 5,
-})
+const adapter = new PrismaPg({ connectionString, connectionTimeoutMillis: 20_000 })
 
 /**
  * Singleton: en dev, el hot reload de Next re-ejecuta este módulo en cada

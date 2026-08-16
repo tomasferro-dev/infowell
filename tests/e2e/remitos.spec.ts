@@ -199,6 +199,10 @@ test.describe('cuando Storage falla', () => {
     )
 
     await page.goto(urlNuevo)
+    // Se espera a que el formulario esté montado: con el esqueleto de carga,
+    // los inputs de archivo todavía no existen apenas se navega.
+    await expect(page.getByRole('button', { name: 'Sacar foto' })).toBeVisible()
+
     await page.locator('input[type="file"]').nth(1).setInputFiles({
       name: 'remito.png',
       mimeType: 'image/png',
@@ -221,6 +225,10 @@ test.describe('cuando Storage falla', () => {
     )
 
     await page.goto(urlNuevo)
+    // Se espera a que el formulario esté montado: con el esqueleto de carga,
+    // los inputs de archivo todavía no existen apenas se navega.
+    await expect(page.getByRole('button', { name: 'Sacar foto' })).toBeVisible()
+
     await page.locator('input[type="file"]').nth(1).setInputFiles({
       name: 'remito.png',
       mimeType: 'image/png',

@@ -57,7 +57,23 @@ type Nota = {
   ruta: string
   mime: string
   duracion: number
-  urlLocal: string
+  /**
+   * Origen del audio para reproducirlo.
+   *
+   * Las recién grabadas usan un blob local; las que ya estaban guardadas se
+   * piden por la ruta protegida del servidor, que revalida el permiso.
+   */
+  src: string
+  /** true si viene de la base: al quitarla hay que revocar su blob local. */
+  guardada?: boolean
+}
+
+/** Una nota que ya existe en la base, para precargar al editar. */
+export type NotaGuardada = {
+  id: string
+  ruta: string
+  mime: string
+  duracion: number
 }
 
 type Pendiente = { blob: Blob; mime: string; duracion: number; urlLocal: string }
@@ -69,13 +85,25 @@ export function VoiceRecorder({
   recursoId,
   name = 'voiceNotes',
   maxSegundos = 300,
+  notasGuardadas,
 }: {
   farmId: string
   recursoId: string
   name?: string
   maxSegundos?: number
+  /** Notas ya existentes, cuando se está editando una intervención. */
+  notasGuardadas?: NotaGuardada[]
 }) {
-  const [notas, setNotas] = useState<Nota[]>([])
+  const [notas, setNotas] = useState<Nota[]>(() =>
+    (notasGuardadas ?? []).map((n) => ({
+      id: n.id,
+      ruta: n.ruta,
+      mime: n.mime,
+      duracion: n.duracion,
+      src: `/api/files/notas-voz/${n.ruta}`,
+      guardada: true,
+    })),
+  )
   const [estado, setEstado] = useState<Estado>('inicial')
   const [segundos, setSegundos] = useState(0)
   const [mensaje, setMensaje] = useState<string>()
@@ -150,7 +178,7 @@ export function VoiceRecorder({
           ruta,
           mime: pendiente.mime,
           duracion: pendiente.duracion,
-          urlLocal: pendiente.urlLocal,
+          src: pendiente.urlLocal,
         },
       ])
       pendienteRef.current = null
@@ -228,9 +256,15 @@ export function VoiceRecorder({
     setMensaje(undefined)
   }
 
-  /** Quita una nota ya subida. Solo se llama desde la confirmación. */
+  /**
+   * Quita una nota de la lista. Solo se llama desde la confirmación.
+   *
+   * Si venía de la base, el archivo se borra recién al guardar la
+   * intervención: si el usuario se arrepiente y no envía el formulario, el
+   * audio sigue estando.
+   */
   function borrarNota(nota: Nota) {
-    URL.revokeObjectURL(nota.urlLocal)
+    if (!nota.guardada) URL.revokeObjectURL(nota.src)
     setNotas((previas) => previas.filter((n) => n.id !== nota.id))
     setABorrar(undefined)
   }
@@ -279,7 +313,7 @@ export function VoiceRecorder({
                   <Trash2 className="size-4" />
                 </Button>
               </div>
-              <ReproductorAudio src={nota.urlLocal} duracionSeg={nota.duracion} />
+              <ReproductorAudio src={nota.src} duracionSeg={nota.duracion} />
             </li>
           ))}
         </ul>

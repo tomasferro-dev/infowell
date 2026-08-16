@@ -5,7 +5,7 @@ import { useActionState } from 'react'
 import { CreatableCombobox, type OpcionCombobox } from '@/components/forms/creatable-combobox'
 import { BotonGuardar, Campo, CampoTexto, ErrorGeneral } from '@/components/forms/form-parts'
 import { ServiceCardPicker, type Servicio } from '@/components/forms/service-card-picker'
-import { VoiceRecorder } from '@/components/forms/voice-recorder'
+import { VoiceRecorder, type NotaGuardada } from '@/components/forms/voice-recorder'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { CAMPOS_MEDICION } from '@/lib/validation/intervencion'
@@ -13,13 +13,27 @@ import { crearBombaAction } from '@/server/actions/catalog'
 import type { FormState } from '@/server/actions/farms'
 
 /**
- * Formulario único de intervención: los tres módulos y un solo Submit.
+ * Formulario de intervención: los tres módulos y un solo Submit.
  *
  * Está armado así porque en el campo los tres ocurren en la misma visita: el
  * técnico marca qué hizo, anota lo que midió y dicta una observación. Pedirle
  * tres formularios separados garantiza que el segundo y el tercero no se
  * carguen nunca.
+ *
+ * El mismo componente sirve para crear y para editar: al editar llegan los
+ * valores previos y el usuario ve exactamente el mismo formulario que usó al
+ * cargar, no una pantalla distinta.
  */
+
+export type IntervencionPrevia = {
+  performedAt: string
+  serviceTypeIds: string[]
+  mediciones: Record<string, string>
+  bomba: { id: string; label: string } | null
+  observacion: { body: string | null } | null
+  notasDeVoz: NotaGuardada[]
+}
+
 export function IntervencionForm({
   action,
   servicios,
@@ -27,6 +41,8 @@ export function IntervencionForm({
   fechaPorDefecto,
   farmId,
   wellId,
+  previa,
+  textoBoton,
 }: {
   action: (prev: FormState, formData: FormData) => Promise<FormState>
   servicios: Servicio[]
@@ -35,6 +51,9 @@ export function IntervencionForm({
   /** Para firmar la subida del audio: la finca decide el permiso. */
   farmId: string
   wellId: string
+  /** Valores actuales, cuando se está editando. */
+  previa?: IntervencionPrevia
+  textoBoton?: string
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(action, {})
   const err = state.fieldErrors ?? {}
@@ -46,9 +65,13 @@ export function IntervencionForm({
         label="Fecha del trabajo"
         type="date"
         required
-        defaultValue={fechaPorDefecto}
+        defaultValue={previa?.performedAt ?? fechaPorDefecto}
         error={err.performedAt}
-        hint="Por defecto hoy. Cambiala si estás cargando una visita anterior."
+        hint={
+          previa
+            ? 'Cambiala si la visita fue otro día.'
+            : 'Por defecto hoy. Cambiala si estás cargando una visita anterior.'
+        }
       />
 
       <section className="space-y-3">
@@ -58,7 +81,7 @@ export function IntervencionForm({
             Tocá todos los que correspondan a esta visita.
           </p>
         </div>
-        <ServiceCardPicker servicios={servicios} />
+        <ServiceCardPicker servicios={servicios} seleccionInicial={previa?.serviceTypeIds} />
       </section>
 
       <Separator />
@@ -80,6 +103,7 @@ export function IntervencionForm({
               // decimal y no numeric: el teclado numérico de iOS no trae coma
               // ni punto, y estas mediciones casi siempre llevan decimales.
               inputMode="decimal"
+              defaultValue={previa?.mediciones[campo.name] ?? ''}
               error={err[campo.name]}
             />
           ))}
@@ -90,6 +114,11 @@ export function IntervencionForm({
           <CreatableCombobox
             name="pumpId"
             opciones={bombas}
+            valorInicial={
+              previa?.bomba
+                ? { id: previa.bomba.id, label: previa.bomba.label, slug: previa.bomba.label }
+                : undefined
+            }
             onCrear={crearBombaAction}
             placeholder="Buscar o registrar una electrobomba…"
             etiquetaCrear="Registrar"
@@ -112,15 +141,16 @@ export function IntervencionForm({
           name="observations"
           label="Notas de la visita"
           rows={5}
+          defaultValue={previa?.observacion?.body ?? ''}
           error={err.observations}
           placeholder="Se limpió el filtro y se cambió el manómetro. Se recomienda revisar el tablero en la próxima visita."
         />
 
-        <VoiceRecorder farmId={farmId} recursoId={wellId} />
+        <VoiceRecorder farmId={farmId} recursoId={wellId} notasGuardadas={previa?.notasDeVoz} />
       </section>
 
       <ErrorGeneral mensaje={state.error} />
-      <BotonGuardar>Guardar intervención</BotonGuardar>
+      <BotonGuardar>{textoBoton ?? 'Guardar intervención'}</BotonGuardar>
     </form>
   )
 }

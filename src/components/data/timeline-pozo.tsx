@@ -1,12 +1,15 @@
 import * as Icons from 'lucide-react'
-import { Mic, Wrench } from 'lucide-react'
+import { Mic, Pencil, Wrench } from 'lucide-react'
+import Link from 'next/link'
 
 import { ReproductorAudio } from '@/components/data/reproductor-audio'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import type { MedicionSerializada } from '@/server/queries/interventions'
 
 const formatoFecha = new Intl.DateTimeFormat('es-AR', { dateStyle: 'long' })
+const formatoFechaCorta = new Intl.DateTimeFormat('es-AR', { dateStyle: 'short' })
 
 export type NotaDeVoz = {
   id: string
@@ -19,6 +22,8 @@ export type ItemTimeline = {
   id: string
   performedAt: string
   autor: string
+  editada: boolean
+  editadaEl: string
   servicios: { id: string; name: string; icon: string | null }[]
   medicion: MedicionSerializada | null
   observaciones: { id: string; body: string | null; voiceNotes: NotaDeVoz[] }[]
@@ -45,7 +50,16 @@ function medicionesConValor(m: MedicionSerializada) {
   ].filter((c) => c.valor != null)
 }
 
-export function TimelinePozo({ items }: { items: ItemTimeline[] }) {
+export function TimelinePozo({
+  items,
+  urlBase,
+  puedeEditar = false,
+}: {
+  items: ItemTimeline[]
+  /** Base para armar el enlace de edición: /fincas/x/pozos/y */
+  urlBase?: string
+  puedeEditar?: boolean
+}) {
   if (items.length === 0) {
     return (
       <Card className="p-6 text-center">
@@ -65,11 +79,29 @@ export function TimelinePozo({ items }: { items: ItemTimeline[] }) {
           <li key={item.id}>
             <Card>
               <CardContent className="space-y-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <p className="font-medium">
-                    {formatoFecha.format(new Date(item.performedAt))}
-                  </p>
-                  <p className="text-muted-foreground shrink-0 text-xs">{item.autor}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {formatoFecha.format(new Date(item.performedAt))}
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      {item.autor}
+                      {/* Se avisa que el registro se corrigió: el cliente ve
+                          estos datos y merece saber que cambiaron. */}
+                      {item.editada
+                        ? ` · editada el ${formatoFechaCorta.format(new Date(item.editadaEl))}`
+                        : ''}
+                    </p>
+                  </div>
+
+                  {puedeEditar && urlBase ? (
+                    <Button asChild variant="ghost" size="sm" className="-mt-1 shrink-0">
+                      <Link href={`${urlBase}/intervencion/${item.id}/editar`}>
+                        <Pencil className="size-4" />
+                        <span className="sr-only">Editar intervención</span>
+                      </Link>
+                    </Button>
+                  ) : null}
                 </div>
 
                 {item.servicios.length > 0 ? (

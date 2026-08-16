@@ -191,3 +191,141 @@ test.describe('notas de voz en el historial', () => {
     await expect(page.getByRole('button', { name: 'Reproducir nota de voz' }).first()).toBeVisible()
   })
 })
+
+/**
+ * Edición de una intervención ya cargada.
+ *
+ * Es el caso real del campo: se cargó 12 donde iban 120, o el técnico se
+ * acuerda de una observación al día siguiente. Lo que hay que garantizar es
+ * que corregir no destruya lo que estaba bien.
+ */
+test.describe('editar una intervención', () => {
+  /** Carga una intervención completa y devuelve la URL de su edición. */
+  async function crearYAbrirEdicion(page: import('@playwright/test').Page, profundidad: string) {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(urlNueva)
+
+    await page.getByRole('button', { name: 'Bobinado' }).click()
+    await page.getByLabel('Profundidad (m)').fill(profundidad)
+    await page.getByLabel('Diámetro de perforación (″)').fill('8')
+    // El texto lleva la profundidad para ser único: todos estos tests cargan
+    // sobre el MISMO pozo, y con un texto repetido las aserciones no sabrían
+    // a cuál intervención se refieren.
+    await page.getByLabel('Notas de la visita').fill(`Observación original ${profundidad}.`)
+    await page.getByRole('button', { name: 'Guardar intervención' }).click()
+    await expect(page).toHaveURL(urlPozo)
+
+    // El lápiz de la primera intervención del historial.
+    await page.getByRole('link', { name: 'Editar intervención' }).first().click()
+    await expect(page.getByRole('heading', { name: 'Editar intervención' })).toBeVisible()
+  }
+
+  test('el formulario llega con los valores actuales cargados', async ({ page }) => {
+    await crearYAbrirEdicion(page, '111')
+
+    await expect(page.getByLabel('Profundidad (m)')).toHaveValue('111')
+    await expect(page.getByLabel('Diámetro de perforación (″)')).toHaveValue('8')
+    await expect(page.getByLabel('Notas de la visita')).toHaveValue('Observación original 111.')
+    // El servicio marcado sigue marcado.
+    await expect(page.getByRole('button', { name: 'Bobinado' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  test('corrige una medición mal cargada sin tocar el resto', async ({ page }) => {
+    await crearYAbrirEdicion(page, '12')
+
+    // El dedazo clásico: iban 120 y se cargó 12.
+    await page.getByLabel('Profundidad (m)').fill('120')
+    await page.getByRole('button', { name: 'Guardar cambios' }).click()
+    await expect(page).toHaveURL(urlPozo)
+
+    // La intervención editada: se ubica por su observación, que es única.
+    const editada = page.getByRole('listitem').filter({ hasText: 'Observación original 12.' })
+    await expect(editada).toHaveCount(1)
+
+    await expect(editada.getByText('120')).toBeVisible()
+    // Lo que no se tocó sigue igual: la observación y el servicio marcado.
+    await expect(editada.getByText('Bobinado', { exact: true })).toBeVisible()
+  })
+
+  test('agrega una observación más tarde', async ({ page }) => {
+    await crearYAbrirEdicion(page, '55')
+
+    await page
+      .getByLabel('Notas de la visita')
+      .fill('Observación original.\nAgregado al día siguiente: falta cambiar el manómetro.')
+    await page.getByRole('button', { name: 'Guardar cambios' }).click()
+    await expect(page).toHaveURL(urlPozo)
+
+    await expect(page.getByText(/falta cambiar el manómetro/)).toBeVisible()
+  })
+
+  test('permite cambiar los servicios marcados', async ({ page }) => {
+    await crearYAbrirEdicion(page, '77')
+
+    // Se desmarca el que estaba y se marca otro.
+    await page.getByRole('button', { name: 'Bobinado' }).click()
+    await page.getByRole('button', { name: 'Filmación de pozo' }).click()
+    await page.getByRole('button', { name: 'Guardar cambios' }).click()
+    await expect(page).toHaveURL(urlPozo)
+
+    await expect(page.getByText('Filmación de pozo')).toBeVisible()
+  })
+
+  test('deja constancia de que la intervención fue editada', async ({ page }) => {
+    await crearYAbrirEdicion(page, '99')
+
+    await page.getByLabel('Profundidad (m)').fill('98')
+    await page.getByRole('button', { name: 'Guardar cambios' }).click()
+    await expect(page).toHaveURL(urlPozo)
+
+    // El cliente ve estos datos: tiene que notarse que se corrigieron.
+    await expect(page.getByText(/editada el/).first()).toBeVisible()
+  })
+
+  test('sigue rechazando datos inválidos al editar', async ({ page }) => {
+    await crearYAbrirEdicion(page, '60')
+
+    // Los niveles cruzados se rechazan igual que al crear.
+    await page.getByLabel('Nivel estático (m)').fill('30')
+    await page.getByLabel('Nivel dinámico (m)').fill('18')
+    await page.getByRole('button', { name: 'Guardar cambios' }).click()
+
+    await expect(page.getByText(/Están cruzados/)).toBeVisible()
+  })
+
+  test('elimina la intervención con confirmación', async ({ page }) => {
+    await crearYAbrirEdicion(page, '43')
+
+    await page.getByRole('button', { name: 'Eliminar esta intervención' }).click()
+    await expect(page.getByRole('alertdialog')).toBeVisible()
+
+    // Se puede cancelar sin consecuencias.
+    await page.getByRole('button', { name: 'Conservarla' }).click()
+    await expect(page.getByRole('alertdialog')).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Eliminar esta intervención' }).click()
+    await page.getByRole('button', { name: 'Eliminar', exact: true }).click()
+
+    await expect(page).toHaveURL(urlPozo)
+    await expect(page.getByText('43', { exact: true })).toHaveCount(0)
+  })
+})
+
+test.describe('permisos sobre la edición', () => {
+  test('el cliente no ve el botón de editar ni alcanza la ruta', async ({ page }) => {
+    // Primero el admin deja una intervención cargada.
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(urlNueva)
+    await page.getByRole('button', { name: 'Bobinado' }).click()
+    await page.getByRole('button', { name: 'Guardar intervención' }).click()
+    await expect(page).toHaveURL(urlPozo)
+
+    await login(page, `${marca}-cliente@test.local`)
+    await page.goto(urlPozo)
+
+    await expect(page.getByRole('link', { name: 'Editar intervención' })).toHaveCount(0)
+  })
+})

@@ -72,6 +72,8 @@ function rutasDeFincaAjena(d: DatosTest) {
     `/fincas/${f}/pozos/${p}`,
     `/fincas/${f}/pozos/${p}/editar`,
     `/fincas/${f}/pozos/${p}/intervencion/nueva`,
+    // Editar con un id inventado: no debe filtrar nada de la finca ajena.
+    `/fincas/${f}/pozos/${p}/intervencion/no-existe/editar`,
     `/fincas/${f}/remitos`,
     `/fincas/${f}/remitos/nuevo`,
   ]

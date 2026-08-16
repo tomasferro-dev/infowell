@@ -148,7 +148,11 @@ export default async function PozoPage({
         </TabsList>
 
         <TabsContent value="historial">
-          <TimelinePozo items={historial} />
+          <TimelinePozo
+            items={historial}
+            urlBase={`/fincas/${farmId}/pozos/${wellId}`}
+            puedeEditar={puedeCargar}
+          />
         </TabsContent>
 
         <TabsContent value="estado">
