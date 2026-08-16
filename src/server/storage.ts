@@ -27,8 +27,8 @@ let cliente: SupabaseClient | undefined
 function storage() {
   if (cliente) return cliente
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = limpiar(process.env.NEXT_PUBLIC_SUPABASE_URL)?.replace(/\/+$/, '')
+  const serviceKey = limpiar(process.env.SUPABASE_SERVICE_ROLE_KEY)
 
   if (!url || !serviceKey) {
     throw new Error(
@@ -41,6 +41,20 @@ function storage() {
   })
 
   return cliente
+}
+
+/**
+ * Saca espacios, saltos de línea y comillas envolventes.
+ *
+ * Pegar una variable en un panel web arrastra basura invisible con facilidad,
+ * y una URL con un salto de línea al final no resuelve: el error que sale es
+ * "fetch failed", que no dice nada sobre la causa real.
+ */
+function limpiar(valor: string | undefined): string | undefined {
+  if (!valor) return undefined
+
+  const limpio = valor.trim().replace(/^["']|["']$/g, '').trim()
+  return limpio === '' ? undefined : limpio
 }
 
 /**
