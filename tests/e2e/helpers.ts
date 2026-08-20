@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
-import type { Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 /**
  * Los fixtures se crean con Prisma en un proceso aparte (ver fixture-runner.ts):
@@ -57,6 +57,24 @@ export function limpiarCatalogo(marcaCorrida: string) {
 }
 
 /**
+ * Escribe en un campo y verifica que el valor haya quedado.
+ *
+ * Playwright puede escribir ANTES de que React hidrate la página, y en ese
+ * caso la hidratación pisa el valor y el campo queda vacío — sin error, sin
+ * aviso, y el test falla después por algo que parece no tener relación.
+ * Con loading.tsx la ventana es más ancha todavía.
+ *
+ * Escribir y confirmar, reintentando, elimina esa clase entera de
+ * intermitencia.
+ */
+export async function escribir(locator: Locator, texto: string) {
+  await expect(async () => {
+    await locator.fill(texto)
+    await expect(locator).toHaveValue(texto, { timeout: 1000 })
+  }).toPass({ timeout: 15_000 })
+}
+
+/**
  * Inicia sesión como `email`.
  *
  * Limpia las cookies primero, SIEMPRE. Sin eso, si ya había una sesión abierta
@@ -68,8 +86,8 @@ export async function login(page: Page, email: string, password = CLAVE_TEST) {
   await page.context().clearCookies()
 
   await page.goto('/login')
-  await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Contraseña').fill(password)
+  await escribir(page.getByLabel('Email'), email)
+  await escribir(page.getByLabel('Contraseña'), password)
   await page.getByRole('button', { name: 'Ingresar' }).click()
   await page.waitForURL('/')
 }

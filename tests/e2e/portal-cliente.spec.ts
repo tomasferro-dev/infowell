@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
+import { escribir, limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
 
 /**
  * Portal del cliente.
@@ -34,7 +34,7 @@ test.afterAll(() => {
 
 async function cargarRemito(page: import('@playwright/test').Page, farmId: string, monto: string) {
   await page.goto(`/fincas/${farmId}/remitos/nuevo`)
-  await page.getByLabel('Monto').fill(monto)
+  await escribir(page.getByLabel('Monto'), monto)
   await page.getByRole('button', { name: 'Guardar remito' }).click()
   await expect(page).toHaveURL(`/fincas/${farmId}/remitos`)
 }
@@ -61,7 +61,12 @@ test.describe('el inicio del cliente solo agrega lo suyo', () => {
     // Se verifica en la página de esa finca y no en el inicio: el inicio
     // muestra los últimos 5 y otros tests cargan remitos en paralelo.
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
-    await page.goto(`/fincas/${datos.fincaAjenaId}/remitos`)
+
+    // Se carga su propio remito en lugar de reusar el del test anterior: con
+    // fullyParallel cada worker levanta SUS fincas (la marca se recalcula al
+    // importar helpers), así que apoyarse en el efecto de otro test es mirar
+    // una finca distinta y encontrarla vacía.
+    await cargarRemito(page, datos.fincaAjenaId, MONTO_AJENO)
 
     await expect(page.getByText(TEXTO_MONTO_AJENO).first()).toBeVisible()
   })
@@ -106,8 +111,8 @@ test.describe('la vista del cliente es de solo lectura', () => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
     await page.goto(`${urlPozo}/intervencion/nueva`)
     await page.getByRole('button', { name: 'Bobinado' }).click()
-    await page.getByLabel('Profundidad (m)').fill('38,5')
-    await page.getByLabel('Notas de la visita').fill('Quedó operativa tras el bobinado.')
+    await escribir(page.getByLabel('Profundidad (m)'), '38,5')
+    await escribir(page.getByLabel('Notas de la visita'), 'Quedó operativa tras el bobinado.')
     await page.getByRole('button', { name: 'Guardar intervención' }).click()
     await expect(page).toHaveURL(urlPozo)
 
@@ -132,8 +137,8 @@ test.describe('usuario sin fincas asignadas', () => {
 
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
     await page.goto('/admin/usuarios/nuevo')
-    await page.getByLabel('Email').fill(email)
-    await page.getByLabel('Contraseña').fill('clave-de-prueba-123')
+    await escribir(page.getByLabel('Email'), email)
+    await escribir(page.getByLabel('Contraseña'), 'clave-de-prueba-123')
     // El rol CLIENTE viene marcado por defecto; no se le asigna ninguna finca.
     await page.getByRole('button', { name: 'Crear usuario' }).click()
     await expect(page).toHaveURL('/admin/usuarios')

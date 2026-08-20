@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { escribir } from './helpers'
+
 /**
  * Flujo de autenticación de punta a punta contra la base real.
  *
@@ -23,8 +25,8 @@ test.describe('autenticación', () => {
     test.skip(!EMAIL, 'falta SEED_ADMIN_EMAIL en el entorno')
 
     await page.goto('/login')
-    await page.getByLabel('Email').fill(EMAIL!)
-    await page.getByLabel('Contraseña').fill('contraseña-incorrecta')
+    await escribir(page.getByLabel('Email'), EMAIL!)
+    await escribir(page.getByLabel('Contraseña'), 'contraseña-incorrecta')
     await page.getByRole('button', { name: 'Ingresar' }).click()
 
     // Se acota al formulario: Next monta su propio role="alert" (el anunciador
@@ -38,8 +40,8 @@ test.describe('autenticación', () => {
 
   test('un email inexistente devuelve exactamente el mismo error', async ({ page }) => {
     await page.goto('/login')
-    await page.getByLabel('Email').fill('no-existe-jamas@ejemplo.com')
-    await page.getByLabel('Contraseña').fill('loquesea')
+    await escribir(page.getByLabel('Email'), 'no-existe-jamas@ejemplo.com')
+    await escribir(page.getByLabel('Contraseña'), 'loquesea')
     await page.getByRole('button', { name: 'Ingresar' }).click()
 
     await expect(page.locator('form').getByRole('alert')).toHaveText(
@@ -51,8 +53,8 @@ test.describe('autenticación', () => {
     test.skip(!EMAIL || !PASSWORD, 'faltan credenciales del seed en el entorno')
 
     await page.goto('/login')
-    await page.getByLabel('Email').fill(EMAIL!)
-    await page.getByLabel('Contraseña').fill(PASSWORD!)
+    await escribir(page.getByLabel('Email'), EMAIL!)
+    await escribir(page.getByLabel('Contraseña'), PASSWORD!)
     await page.getByRole('button', { name: 'Ingresar' }).click()
 
     await expect(page).toHaveURL('/')
@@ -64,8 +66,8 @@ test.describe('autenticación', () => {
     test.skip(!EMAIL || !PASSWORD, 'faltan credenciales del seed en el entorno')
 
     await page.goto('/login')
-    await page.getByLabel('Email').fill(EMAIL!)
-    await page.getByLabel('Contraseña').fill(PASSWORD!)
+    await escribir(page.getByLabel('Email'), EMAIL!)
+    await escribir(page.getByLabel('Contraseña'), PASSWORD!)
     await page.getByRole('button', { name: 'Ingresar' }).click()
     await expect(page).toHaveURL('/')
 

@@ -68,6 +68,9 @@ const numeroOpcional = (min: number, max: number, mensaje: string) =>
 
 export const crearFincaSchema = z.object({
   name: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres').max(120),
+  // Ubicación del casco de la finca, para el mapa. Se captura con GPS.
+  latitude: numeroOpcional(-90, 90, 'La latitud debe estar entre -90 y 90'),
+  longitude: numeroOpcional(-180, 180, 'La longitud debe estar entre -180 y 180'),
   taxId: cuitOpcional,
   address: textoOpcional(),
   city: textoOpcional(100),

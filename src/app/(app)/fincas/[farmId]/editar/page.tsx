@@ -35,7 +35,15 @@ export default async function EditarFincaPage({
 
       <h1 className="text-2xl font-semibold tracking-tight">Editar finca</h1>
 
-      <FincaForm action={action} finca={finca} />
+      <FincaForm
+        action={action}
+        finca={{
+          ...finca,
+          // Decimal no es serializable hacia un Client Component.
+          latitude: finca.latitude?.toString() ?? null,
+          longitude: finca.longitude?.toString() ?? null,
+        }}
+      />
     </div>
   )
 }

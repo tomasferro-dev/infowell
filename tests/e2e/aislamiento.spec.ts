@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
+import { escribir, limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
 
 /**
  * EL test del proyecto: que un cliente no pueda ver, por ningún camino, datos
@@ -137,14 +137,14 @@ test.describe('CRUD del admin', () => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
 
     await page.goto('/fincas/nueva')
-    await page.getByLabel('Nombre o razón social').fill(nombreFinca)
-    await page.getByLabel('Localidad').fill('San Rafael')
+    await escribir(page.getByLabel('Nombre o razón social'), nombreFinca)
+    await escribir(page.getByLabel('Localidad'), 'San Rafael')
     await page.getByRole('button', { name: 'Crear finca' }).click()
 
     await expect(page.getByRole('heading', { name: nombreFinca })).toBeVisible()
 
     await page.getByRole('link', { name: 'Agregar' }).click()
-    await page.getByLabel('Nombre del pozo').fill('Pozo N° 1 - Sector Norte')
+    await escribir(page.getByLabel('Nombre del pozo'), 'Pozo N° 1 - Sector Norte')
     await page.getByRole('button', { name: 'Crear pozo' }).click()
 
     await expect(page.getByText('Pozo N° 1 - Sector Norte')).toBeVisible()
@@ -154,8 +154,8 @@ test.describe('CRUD del admin', () => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
 
     await page.goto('/fincas/nueva')
-    await page.getByLabel('Nombre o razón social').fill(`${marca} Finca CUIT malo`)
-    await page.getByLabel('CUIT').fill('30-71234567-9')
+    await escribir(page.getByLabel('Nombre o razón social'), `${marca} Finca CUIT malo`)
+    await escribir(page.getByLabel('CUIT'), '30-71234567-9')
     await page.getByRole('button', { name: 'Crear finca' }).click()
 
     await expect(page.getByText('El CUIT no es válido')).toBeVisible()
@@ -165,12 +165,12 @@ test.describe('CRUD del admin', () => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
 
     await page.goto(`/fincas/${fincaPropiaId}/pozos/nuevo`)
-    await page.getByLabel('Nombre del pozo').fill('Pozo Duplicado')
+    await escribir(page.getByLabel('Nombre del pozo'), 'Pozo Duplicado')
     await page.getByRole('button', { name: 'Crear pozo' }).click()
     await expect(page.getByText('Pozo Duplicado')).toBeVisible()
 
     await page.goto(`/fincas/${fincaPropiaId}/pozos/nuevo`)
-    await page.getByLabel('Nombre del pozo').fill('Pozo Duplicado')
+    await escribir(page.getByLabel('Nombre del pozo'), 'Pozo Duplicado')
     await page.getByRole('button', { name: 'Crear pozo' }).click()
 
     await expect(page.getByText('Ya existe un pozo con ese nombre en esta finca')).toBeVisible()

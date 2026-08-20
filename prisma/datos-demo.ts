@@ -54,9 +54,12 @@ const FINCAS = [
     contactPhone: '261 555 1042',
     contactEmail: 'ramiro@laescondida.com.ar',
     notes: 'Riego por goteo en los tres cuadros. Acceso por el portón sur.',
+    // Luján de Cuyo, sobre la Ruta 15.
+    latitude: -33.0412,
+    longitude: -68.8934,
     pozos: [
-      { name: 'Pozo N° 1 - Sector Norte', perforadoHaceMeses: 26 },
-      { name: 'Pozo N° 2 - Cuadro Malbec', perforadoHaceMeses: 15 },
+      { name: 'Pozo N° 1 - Sector Norte', perforadoHaceMeses: 26, lat: -33.0389, lon: -68.8961 },
+      { name: 'Pozo N° 2 - Cuadro Malbec', perforadoHaceMeses: 15, lat: -33.0437, lon: -68.8902 },
     ],
   },
   {
@@ -69,10 +72,15 @@ const FINCAS = [
     contactPhone: '261 555 3388',
     contactEmail: 'produccion@altocerro.com.ar',
     notes: 'Coordinar las visitas con producción. No entrar en cosecha.',
+    // Valle de Uco, camino a Los Chacayes.
+    latitude: -33.6821,
+    longitude: -69.1447,
     pozos: [
       // Sin fecha: es un pozo heredado y nadie sabe cuando se hizo.
-      { name: 'Pozo N° 1 - Casco' },
-      { name: 'Pozo N° 2 - Finca Alta', perforadoHaceMeses: 9 },
+      { name: 'Pozo N° 1 - Casco', lat: -33.6798, lon: -69.1421 },
+      { name: 'Pozo N° 2 - Finca Alta', perforadoHaceMeses: 9, lat: -33.6874, lon: -69.1512 },
+      // Sin coordenadas: quedó sin marcar y sirve para ver cómo se comporta
+      // el mapa con un pozo que todavía no tiene ubicación.
       { name: 'Pozo N° 3 - Reserva', perforadoHaceMeses: 54 },
     ],
   },
@@ -83,7 +91,12 @@ const FINCAS = [
     address: 'Calle Pescara 2200',
     contactName: 'Julio Peralta',
     contactPhone: '260 555 7719',
-    pozos: [{ name: 'Pozo N° 1 - Cabecera', perforadoHaceMeses: 72 }],
+    // San Rafael.
+    latitude: -34.6177,
+    longitude: -68.3301,
+    pozos: [
+      { name: 'Pozo N° 1 - Cabecera', perforadoHaceMeses: 72, lat: -34.6192, lon: -68.3288 },
+    ],
   },
   {
     name: 'Establecimiento El Retamo',
@@ -92,7 +105,12 @@ const FINCAS = [
     contactName: 'Marta Quiroga',
     contactPhone: '261 555 9004',
     notes: 'Pozo viejo, de los años noventa. Los papeles están en la administración.',
-    pozos: [{ name: 'Pozo N° 1 - Único', perforadoHaceMeses: 340 }],
+    // Maipú.
+    latitude: -32.9842,
+    longitude: -68.7891,
+    pozos: [
+      { name: 'Pozo N° 1 - Único', perforadoHaceMeses: 340, lat: -32.9857, lon: -68.7874 },
+    ],
   },
 ]
 
@@ -554,6 +572,8 @@ async function main() {
           create: pozos.map((p) => ({
             name: p.name,
             drilledAt: p.perforadoHaceMeses != null ? hace(p.perforadoHaceMeses, 20) : undefined,
+            latitude: p.lat,
+            longitude: p.lon,
           })),
         },
       },

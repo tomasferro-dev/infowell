@@ -119,6 +119,11 @@ model Farm {
   notes        String? @db.Text
   isActive     Boolean @default(true)
 
+  /// Ubicación del casco o la entrada de la finca, para el mapa.
+  /// Se captura con el GPS del teléfono estando en el lugar.
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+
   members  FarmMember[]
   wells    Well[]
   receipts Receipt[]

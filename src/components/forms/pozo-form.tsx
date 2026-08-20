@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 
+import { CapturaGps } from '@/components/forms/captura-gps'
 import { BotonGuardar, Campo, CampoTexto, ErrorGeneral } from '@/components/forms/form-parts'
 import type { FormState } from '@/server/actions/farms'
 
@@ -54,26 +55,12 @@ export function PozoForm({
         hint="Opcional. Si es un pozo preexistente, dejala vacía."
       />
 
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Campo
-          name="latitude"
-          label="Latitud"
-          // decimal, no numeric: el teclado numérico de iOS no trae el signo
-          // menos, y en Argentina todas las latitudes son negativas.
-          inputMode="decimal"
-          defaultValue={pozo?.latitude ?? ''}
-          error={err.latitude}
-          placeholder="-32.8895"
-        />
-        <Campo
-          name="longitude"
-          label="Longitud"
-          inputMode="decimal"
-          defaultValue={pozo?.longitude ?? ''}
-          error={err.longitude}
-          placeholder="-68.8458"
-        />
-      </div>
+      <CapturaGps
+        latInicial={pozo?.latitude}
+        lonInicial={pozo?.longitude}
+        etiqueta="Ubicación del pozo"
+        ayuda="Marcala parado al lado del pozo. Es lo que lo hace aparecer en el mapa."
+      />
 
       <CampoTexto
         name="notes"

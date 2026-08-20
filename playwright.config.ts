@@ -16,6 +16,24 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  /**
+   * Se limitan los workers a propósito.
+   *
+   * Playwright usaría la mitad de los núcleos (8 acá), y los 8 pegándole a la
+   * misma base gratuita de Supabase la estrangulan: los tests no fallan por
+   * una aserción sino por timeout, y falla uno distinto en cada corrida. En
+   * serie los mismos tests tardan 10-15 s cada uno; con 8 workers se pasan de
+   * los 30 s. Con 4 el banco respira y sigue siendo 4x más rápido que en serie.
+   */
+  workers: process.env.CI ? 2 : 4,
+  /**
+   * 60 s por test en vez de los 30 s por defecto.
+   *
+   * Un test de este banco hace login + alta completa + edición contra la base
+   * real: 10-15 s sin competencia. Con 30 s el margen es de apenas 2x y
+   * cualquier lentitud del plan gratuito lo tumba.
+   */
+  timeout: 60_000,
   reporter: process.env.CI ? 'github' : 'list',
   /**
    * 10 s en vez de los 5 s por defecto.

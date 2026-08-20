@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 
+import { CapturaGps } from '@/components/forms/captura-gps'
 import { BotonGuardar, Campo, CampoTexto, ErrorGeneral } from '@/components/forms/form-parts'
 import type { FormState } from '@/server/actions/farms'
 
@@ -15,6 +16,9 @@ type Finca = {
   contactPhone: string | null
   contactEmail: string | null
   notes: string | null
+  /** Los Decimal de Prisma no cruzan al cliente: llegan ya como texto. */
+  latitude: string | null
+  longitude: string | null
 }
 
 export function FincaForm({
@@ -70,6 +74,13 @@ export function FincaForm({
         label="Dirección"
         defaultValue={finca?.address ?? ''}
         error={err.address}
+      />
+
+      <CapturaGps
+        latInicial={finca?.latitude}
+        lonInicial={finca?.longitude}
+        etiqueta="Ubicación de la finca"
+        ayuda="El casco o la entrada. Sirve para ubicarla en el mapa."
       />
 
       <div className="grid gap-5 sm:grid-cols-2">

@@ -133,3 +133,33 @@ describe('crearUsuarioSchema', () => {
     expect(r.farmIds).toEqual([])
   })
 })
+
+/**
+ * Coordenadas. Son el dato que hace posible el mapa, y el único que se captura
+ * con un sensor en vez de escribirse: por eso importa que el rango se valide
+ * igual que si viniera tipeado a mano.
+ */
+describe('coordenadas de la finca', () => {
+  const base = { name: 'Finca La Escondida' }
+
+  it('acepta coordenadas de Mendoza', () => {
+    const r = crearFincaSchema.parse({ ...base, latitude: '-33.0412', longitude: '-68.8934' })
+    expect(r.latitude).toBeCloseTo(-33.0412)
+    expect(r.longitude).toBeCloseTo(-68.8934)
+  })
+
+  it('deja la ubicación en undefined si viene vacía', () => {
+    const r = crearFincaSchema.parse({ ...base, latitude: '', longitude: '' })
+    expect(r.latitude).toBeUndefined()
+    expect(r.longitude).toBeUndefined()
+  })
+
+  it('rechaza coordenadas fuera de rango', () => {
+    expect(crearFincaSchema.safeParse({ ...base, latitude: '95' }).success).toBe(false)
+    expect(crearFincaSchema.safeParse({ ...base, longitude: '-200' }).success).toBe(false)
+  })
+
+  it('rechaza texto donde va una coordenada', () => {
+    expect(crearFincaSchema.safeParse({ ...base, latitude: 'por el norte' }).success).toBe(false)
+  })
+})

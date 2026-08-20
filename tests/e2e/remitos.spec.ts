@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
+import { escribir, limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
 
 /**
  * Remitos: el flujo del Cargador, que es quien más usa la app.
@@ -44,8 +44,8 @@ test.describe('carga de remitos', () => {
     const fechaEsperada = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
     await expect(page.getByLabel('Fecha del remito')).toHaveValue(fechaEsperada)
 
-    await page.getByLabel('Monto').fill('15.000,50')
-    await page.getByLabel('N° de remito').fill('0001-00012345')
+    await escribir(page.getByLabel('Monto'), '15.000,50')
+    await escribir(page.getByLabel('N° de remito'), '0001-00012345')
 
     // El input de galería es el segundo file input (el primero es la cámara).
     await page.locator('input[type="file"]').nth(1).setInputFiles({
@@ -77,12 +77,12 @@ test.describe('carga de remitos', () => {
     await login(page, `${marca}-cargador@test.local`)
 
     await page.goto(urlNuevo)
-    await page.getByLabel('Monto').fill('1000')
+    await escribir(page.getByLabel('Monto'), '1000')
     await page.getByRole('button', { name: 'Guardar remito' }).click()
     await expect(page).toHaveURL(urlRemitos)
 
     await page.goto(urlNuevo)
-    await page.getByLabel('Monto').fill('2500,25')
+    await escribir(page.getByLabel('Monto'), '2500,25')
     await page.getByRole('button', { name: 'Guardar remito' }).click()
     await expect(page).toHaveURL(urlRemitos)
 
@@ -105,7 +105,7 @@ test.describe('carga de remitos', () => {
     await login(page, `${marca}-cargador@test.local`)
     await page.goto(urlNuevo)
 
-    await page.getByLabel('Monto').fill('mucha plata')
+    await escribir(page.getByLabel('Monto'), 'mucha plata')
     await page.getByRole('button', { name: 'Guardar remito' }).click()
 
     await expect(page.getByText('El monto no es un número válido')).toBeVisible()
@@ -116,8 +116,8 @@ test.describe('carga de remitos', () => {
     await page.goto(urlNuevo)
 
     const manana = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
-    await page.getByLabel('Fecha del remito').fill(manana)
-    await page.getByLabel('Monto').fill('500')
+    await escribir(page.getByLabel('Fecha del remito'), manana)
+    await escribir(page.getByLabel('Monto'), '500')
     await page.getByRole('button', { name: 'Guardar remito' }).click()
 
     await expect(page.getByText('La fecha no puede ser futura')).toBeVisible()
@@ -266,8 +266,8 @@ test.describe('detalle del remito', () => {
     await login(page, `${marca}-cargador@test.local`)
 
     await page.goto(urlNuevo)
-    await page.getByLabel('Monto').fill('3300')
-    await page.getByLabel('N° de remito').fill(numero)
+    await escribir(page.getByLabel('Monto'), '3300')
+    await escribir(page.getByLabel('N° de remito'), numero)
     await page.locator('input[type="file"]').nth(1).setInputFiles([
       { name: 'a.png', mimeType: 'image/png', buffer: PNG_MINIMO },
       { name: 'b.png', mimeType: 'image/png', buffer: PNG_MINIMO },

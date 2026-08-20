@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  escribir,
   limpiarCatalogo,
   limpiarDatos,
   login,
@@ -49,13 +50,14 @@ test.describe('carga de intervención', () => {
     await page.getByRole('button', { name: 'Bobinado' }).click()
 
     // MÓDULO B — solo dos mediciones: el resto queda vacío a propósito.
-    await page.getByLabel('Profundidad (m)').fill('42,5')
-    await page.getByLabel('Caudal (m³/h)').fill('12')
+    await escribir(page.getByLabel('Profundidad (m)'), '42,5')
+    await escribir(page.getByLabel('Caudal (m³/h)'), '12')
 
     // MÓDULO C — observación.
-    await page
-      .getByLabel('Notas de la visita')
-      .fill('Se limpió el filtro. Revisar tablero en la próxima visita.')
+    await escribir(
+      page.getByLabel('Notas de la visita'),
+      'Se limpió el filtro. Revisar tablero en la próxima visita.',
+    )
 
     await page.getByRole('button', { name: 'Guardar intervención' }).click()
 
@@ -89,8 +91,8 @@ test.describe('carga de intervención', () => {
     await page.goto(urlNueva)
 
     // Cargados al revés: es el error típico al completar rápido en el campo.
-    await page.getByLabel('Nivel estático (m)').fill('30')
-    await page.getByLabel('Nivel dinámico (m)').fill('18')
+    await escribir(page.getByLabel('Nivel estático (m)'), '30')
+    await escribir(page.getByLabel('Nivel dinámico (m)'), '18')
     await page.getByRole('button', { name: 'Guardar intervención' }).click()
 
     await expect(page.getByText(/Están cruzados/)).toBeVisible()
@@ -101,7 +103,7 @@ test.describe('carga de intervención', () => {
     await page.goto(urlNueva)
 
     const manana = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
-    await page.getByLabel('Fecha del trabajo').fill(manana)
+    await escribir(page.getByLabel('Fecha del trabajo'), manana)
     await page.getByRole('button', { name: 'Bobinado' }).click()
     await page.getByRole('button', { name: 'Guardar intervención' }).click()
 
@@ -116,10 +118,10 @@ test.describe('carga de intervención', () => {
 
     // Se carga algo ANTES de abrir el combobox, para comprobar que el alta al
     // vuelo no recarga el formulario ni borra lo escrito.
-    await page.getByLabel('Profundidad (m)').fill('55')
+    await escribir(page.getByLabel('Profundidad (m)'), '55')
 
     await page.getByRole('combobox', { name: 'Electrobomba instalada' }).click()
-    await page.getByPlaceholder('Buscar o registrar una electrobomba…').fill(modelo)
+    await escribir(page.getByPlaceholder('Buscar o registrar una electrobomba…'), modelo)
     await page.getByRole('option', { name: `Registrar «${modelo}»` }).click()
 
     await expect(page.getByRole('combobox', { name: 'Electrobomba instalada' })).toContainText(
@@ -206,12 +208,12 @@ test.describe('editar una intervención', () => {
     await page.goto(urlNueva)
 
     await page.getByRole('button', { name: 'Bobinado' }).click()
-    await page.getByLabel('Profundidad (m)').fill(profundidad)
-    await page.getByLabel('Diámetro de perforación (″)').fill('8')
+    await escribir(page.getByLabel('Profundidad (m)'), profundidad)
+    await escribir(page.getByLabel('Diámetro de perforación (″)'), '8')
     // El texto lleva la profundidad para ser único: todos estos tests cargan
     // sobre el MISMO pozo, y con un texto repetido las aserciones no sabrían
     // a cuál intervención se refieren.
-    await page.getByLabel('Notas de la visita').fill(`Observación original ${profundidad}.`)
+    await escribir(page.getByLabel('Notas de la visita'), `Observación original ${profundidad}.`)
     await page.getByRole('button', { name: 'Guardar intervención' }).click()
     await expect(page).toHaveURL(urlPozo)
 
@@ -237,7 +239,7 @@ test.describe('editar una intervención', () => {
     await crearYAbrirEdicion(page, '12')
 
     // El dedazo clásico: iban 120 y se cargó 12.
-    await page.getByLabel('Profundidad (m)').fill('120')
+    await escribir(page.getByLabel('Profundidad (m)'), '120')
     await page.getByRole('button', { name: 'Guardar cambios' }).click()
     await expect(page).toHaveURL(urlPozo)
 
@@ -277,7 +279,7 @@ test.describe('editar una intervención', () => {
   test('deja constancia de que la intervención fue editada', async ({ page }) => {
     await crearYAbrirEdicion(page, '99')
 
-    await page.getByLabel('Profundidad (m)').fill('98')
+    await escribir(page.getByLabel('Profundidad (m)'), '98')
     await page.getByRole('button', { name: 'Guardar cambios' }).click()
     await expect(page).toHaveURL(urlPozo)
 
@@ -289,8 +291,8 @@ test.describe('editar una intervención', () => {
     await crearYAbrirEdicion(page, '60')
 
     // Los niveles cruzados se rechazan igual que al crear.
-    await page.getByLabel('Nivel estático (m)').fill('30')
-    await page.getByLabel('Nivel dinámico (m)').fill('18')
+    await escribir(page.getByLabel('Nivel estático (m)'), '30')
+    await escribir(page.getByLabel('Nivel dinámico (m)'), '18')
     await page.getByRole('button', { name: 'Guardar cambios' }).click()
 
     await expect(page.getByText(/Están cruzados/)).toBeVisible()

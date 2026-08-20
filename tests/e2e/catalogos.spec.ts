@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { limpiarCatalogo, login, marca } from './helpers'
+import { escribir, limpiarCatalogo, login, marca } from './helpers'
 
 /**
  * Catálogos extensibles. Lo crítico acá no es el alta sino la deduplicación:
@@ -43,7 +43,7 @@ test.describe('catálogo de servicios', () => {
     const antes = await page.getByRole('listitem').count()
 
     // Mismo servicio del seed, escrito sin tilde y en minúsculas.
-    await page.getByLabel('Nuevo servicio').fill('perforacion de pozo')
+    await escribir(page.getByLabel('Nuevo servicio'), 'perforacion de pozo')
     await page.getByRole('button', { name: 'Agregar' }).click()
 
     await expect(page.getByText(/ya existía/)).toBeVisible()
@@ -75,12 +75,12 @@ test.describe('catálogo de electrobombas', () => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
     await page.goto('/admin/bombas')
 
-    await page.getByLabel('Nuevo electrobomba').fill(modelo)
+    await escribir(page.getByLabel('Nuevo electrobomba'), modelo)
     await page.getByRole('button', { name: 'Agregar' }).click()
     await expect(page.getByText(`«${modelo}» agregado.`)).toBeVisible()
 
     // Mismo modelo con otra puntuación y espaciado: debe reconocerlo.
-    await page.getByLabel('Nuevo electrobomba').fill(`  ${modelo.toUpperCase()}.  `)
+    await escribir(page.getByLabel('Nuevo electrobomba'), `  ${modelo.toUpperCase()}.  `)
     await page.getByRole('button', { name: 'Agregar' }).click()
     await expect(page.getByText(/ya existía/)).toBeVisible()
   })
