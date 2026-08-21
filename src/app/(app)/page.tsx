@@ -1,4 +1,4 @@
-import { Building2, Camera, Droplet, FileText } from 'lucide-react'
+import { Building2, Camera, Droplet, FileText, Map } from 'lucide-react'
 import Link from 'next/link'
 
 import { Badge } from '@/components/ui/badge'
@@ -63,6 +63,18 @@ export default async function InicioPage() {
           />
           <Dato etiqueta="Facturado" valor={formatearMonto(datos.montoTotal)} ajustado />
         </dl>
+      ) : null}
+
+      {/* Ancho completo y alto de dedo: en el celular es la puerta de entrada
+          al mapa, no un enlace más de una lista. */}
+      {!sinFincas ? (
+        <Button asChild variant="outline" className="h-14 w-full justify-start text-base">
+          <Link href="/mapa">
+            <Map className="size-5" />
+            <span className="flex-1 text-left">Ir al mapa</span>
+            <IndicadorEnlace className="size-5" />
+          </Link>
+        </Button>
       ) : null}
 
       {datos.ultimasIntervenciones.length > 0 ? (

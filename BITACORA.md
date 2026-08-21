@@ -38,8 +38,8 @@ una finca que no es suya.** Todo lo demás se negocia; esto no.
 ## 2. Estado actual
 
 **La app está terminada y deployada.** Las 9 fases del plan original están
-completas, más identidad visual y renombre a InfoWell (que no estaban en el
-plan).
+completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
+(§11) — ninguno de los tres estaba en el plan.
 
 - **Repo**: `https://github.com/tomasferro-dev/infowell` (rama `main`)
 - **Local**: `D:\Escritorio\DEV\ARENAS\app-gestion`
@@ -52,8 +52,8 @@ plan).
 ```
 tsc          0 errores
 eslint       0 errores
-vitest       106 tests
-playwright   90 tests e2e (contra Supabase real)
+vitest       110 tests
+playwright   210 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -429,6 +429,14 @@ puede tener memorizado.
 | **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está; el botón aparece solo. ⚠️ Antes hay que agregar un filtro para que solo entren emails ya dados de alta. |
 | **Transcripción de audio** | Crear cuenta en Groq y cargar `GROQ_API_KEY`. **Requiere IA**: no existe forma de transcribir voz con programación determinista. Groq tiene Whisper large-v3-turbo con plan gratuito generoso. |
 
+### Sobre el mapa
+
+| Pendiente | Nota |
+|---|---|
+| **Cargar coordenadas de las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos demo ya vienen ubicados; las fincas reales hay que salir a marcarlas. |
+| **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md — sin eso la clave sirve desde cualquier sitio. |
+| **Crear un pozo tocando un punto del mapa** | Hoy la ficha lleva al formulario de alta; no pasa la coordenada del punto tocado. |
+
 ### ⚠️ Separar Supabase dev/prod — pendiente recomendado
 
 **Hoy producción y desarrollo comparten el mismo proyecto de Supabase.** Eso
@@ -524,3 +532,73 @@ si hay datos reales.
   OAuth, cómo verificar un deploy.
 - **`AGENTS.md` / `CLAUDE.md`** — advertencia de Next.js sobre leer la
   documentación de la versión instalada.
+
+---
+
+## 11. El mapa
+
+Es la última incorporación y la más visible. Vive en `/mapa`, se entra por un
+botón ancho en el inicio.
+
+### Por qué MapLibre y no Cesium
+
+El usuario venía inclinado a CesiumJS por el parecido con Google Earth. Se
+descartó por tres razones, en orden de peso:
+
+1. **Peso en el celular.** Cesium son 3-5 MB comprimidos y un globo WebGL con
+   tiles de terreno en memoria. Esta app la abre un técnico en una finca, con
+   3G y un Android de gama media. Es el peor escenario para Cesium.
+2. **Encarece lo que de verdad cuesta.** Lo caro del feature no es la imagen
+   satelital: es el picking de puntos, la ficha arrastrable y editar desde ahí.
+   En MapLibre eso es camino trillado.
+3. **Su ventaja no aplica.** Cesium brilla con elevación y volumen. Acá la
+   profundidad es *bajo* tierra, y eso ya lo resuelve mejor el perfil de pozo
+   en SVG (§7).
+
+MapLibre y no Mapbox GL JS porque Mapbox v2+ es licencia propietaria y factura
+por *map loads*: una PWA que el operario abre treinta veces por día quema ese
+contador. MapLibre es el fork abierto y solo se autentican los *tiles*, lo que
+además desacopla la librería del proveedor de imagen.
+
+### La imagen
+
+MapTiler, estilo `hybrid` (satélite + nombres de ruta y paraje, que es lo único
+que permite ubicarse en el campo). Se verificó sobre las coordenadas reales de
+los datos demo antes de construir: **es nítida hasta z17-18 sobre Mendoza y de
+ahí en adelante interpola**. Esri World Imagery tiene un nivel más de detalle
+real, pero no cambia nada operativo — el GPS del teléfono tiene ±8-10 m de
+error, así que el sub-métrico no aporta.
+
+Cambiar de proveedor es una sola variable de entorno y el `style` del mapa.
+
+### Decisiones que no conviene revertir
+
+- **Los pozos se ocultan por debajo de z13** (`ZOOM_POZOS` en `mapa.tsx`). Un
+  pozo está a decenas de metros del casco: de lejos los pines se pisan y
+  ninguno se puede tocar. De lejos se ven las fincas, al acercarse los pozos.
+- **La ficha reencuadra el mapa con `padding`.** Ocupa el 70% de abajo; sin
+  reencuadrar, el punto que se acaba de tocar queda detrás de ella.
+- **El contenedor del mapa lleva `pointer-events-auto`.** vaul se apoya en
+  Radix, que pone `pointer-events: none` en el `body` mientras la ficha está
+  abierta *aunque sea no-modal*. Sin esa línea no se puede tocar otro marcador
+  ni mover el mapa, y no hay ningún error que lo delate.
+- **La ficha no usa el `Drawer` de shadcn** sino vaul directo: ese preset es
+  modal y tapa el mapa con un velo, que es exactamente lo contrario de lo que
+  se busca.
+- **Nada de `snapPoints`.** Con topes intermedios vaul abría la ficha apenas
+  asomando por el borde. Altura fija de 70vh, scroll adentro, arrastre para
+  cerrar — que es además lo que se había pedido.
+- **El mapa no espera el evento `load`.** No llega a dispararse cuando React
+  vuelve a montar el componente (StrictMode lo hace siempre en desarrollo), y
+  esperarlo dejaba el mapa sin marcadores. Los marcadores son elementos del DOM
+  que el mapa posiciona, no capas del estilo: se pueden colgar apenas el mapa
+  existe. El mapa vive en `useState`, no en un `ref`, para que los efectos que
+  le cuelgan cosas vuelvan a correr cuando se recrea.
+
+### Seguridad
+
+`puntosDelMapa()` sale del mismo `scopeDeFincas()` que el resto (§6). Es la
+vista **más agregada de toda la app**: una sola ruta que junta todas las fincas
+del actor, y las coordenadas viajan enteras al navegador. Filtrar en la vista
+no alcanzaría. La auditoría verifica que el id de una finca ajena no aparezca
+en el HTML que recibe el cliente, no solo que no se dibuje.

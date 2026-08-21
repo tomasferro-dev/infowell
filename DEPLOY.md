@@ -11,10 +11,34 @@ Cargalas en **Production** y **Preview** (Project Settings → Environment Varia
 | `NEXT_PUBLIC_SUPABASE_URL` | Storage (fotos y audios) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Storage, solo del lado del servidor |
 | `DIRECT_URL` | Conexión directa (puerto **5432**), solo para migrar |
+| `NEXT_PUBLIC_MAPTILER_KEY` | Imagen satelital del mapa |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Login con Google (opcionales) |
 
 Después de agregar o cambiar una variable hay que **volver a deployar**: Vercel
 no reconstruye solo.
+
+### La clave de MapTiler es pública, y eso está bien
+
+`NEXT_PUBLIC_MAPTILER_KEY` viaja al navegador por definición: el mapa pide los
+tiles desde el teléfono del usuario. No hay forma de esconderla, y no la hay en
+ningún mapa web.
+
+Lo que la protege es la lista de **Allowed HTTP Origins** en el panel de
+MapTiler. Cuando esté el dominio, cargar ahí:
+
+```
+infowell.com.ar
+*.infowell.com.ar
+*.vercel.app
+localhost:3000
+```
+
+Sin esa lista la clave sirve desde cualquier sitio y un tercero puede gastar la
+cuota. Con la lista cargada, sirve solo desde los orígenes propios.
+
+Si el mapa deja de cargar imagen y todo lo demás anda, ese es el primer lugar
+para mirar: la app no puede distinguir "clave sin cuota" de "origen
+rechazado".
 
 ### El build no necesita ninguna
 

@@ -217,8 +217,15 @@ test.describe('editar una intervención', () => {
     await page.getByRole('button', { name: 'Guardar intervención' }).click()
     await expect(page).toHaveURL(urlPozo)
 
-    // El lápiz de la primera intervención del historial.
-    await page.getByRole('link', { name: 'Editar intervención' }).first().click()
+    // El lápiz de ESTA intervención, ubicada por su observación —que es única
+    // justamente para esto—. Con .first() se abría a veces la intervención
+    // anterior: el historial todavía no había refrescado, y el síntoma era un
+    // formulario con los campos vacíos, que no se parece en nada a la causa.
+    const item = page.getByRole('listitem').filter({
+      hasText: `Observación original ${profundidad}.`,
+    })
+    await expect(item).toHaveCount(1)
+    await item.getByRole('link', { name: 'Editar intervención' }).click()
     await expect(page.getByRole('heading', { name: 'Editar intervención' })).toBeVisible()
   }
 

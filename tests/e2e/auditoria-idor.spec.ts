@@ -237,11 +237,42 @@ test.describe('endpoints de archivos', () => {
   })
 })
 
+test.describe('el mapa es la vista más agregada de todas', () => {
+  /**
+   * El mapa no tiene una ruta "ajena" que pedir: es UNA sola ruta que junta
+   * todas las fincas del actor. El riesgo no es entrar donde no corresponde
+   * sino que la consulta traiga de más, y como las coordenadas viajan enteras
+   * al navegador, no alcanza con que la vista no las dibuje.
+   */
+  test('el CLIENTE no recibe ni un dato de la finca ajena', async ({ page }) => {
+    await login(page, `${marca}-cliente@test.local`)
+    await page.goto('/mapa')
+
+    const html = await page.content()
+    expect(html, 'el id de la finca ajena no puede viajar al navegador').not.toContain(
+      datos.fincaAjenaId,
+    )
+    expect(html, 'ni el de su pozo').not.toContain(datos.pozoAjenoId)
+    expect(html).not.toContain(`${marca} Finca Ajena`)
+    expect(html).not.toContain('Pozo secreto')
+  })
+
+  test('el CARGADOR tampoco', async ({ page }) => {
+    await login(page, `${marca}-cargador@test.local`)
+    await page.goto('/mapa')
+
+    const html = await page.content()
+    expect(html).not.toContain(datos.fincaAjenaId)
+    expect(html).not.toContain(datos.pozoAjenoId)
+  })
+})
+
 test.describe('sin sesión no se entra a ningún lado', () => {
   test('toda ruta de la app redirige al login', async ({ page }) => {
     const rutas = [
       '/',
       '/fincas',
+      '/mapa',
       `/fincas/${datos.fincaPropiaId}`,
       `/fincas/${datos.fincaPropiaId}/remitos`,
       '/admin/usuarios',
