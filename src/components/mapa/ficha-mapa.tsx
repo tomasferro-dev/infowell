@@ -16,20 +16,32 @@ import type { MarcadorMapa } from '@/server/queries/farms'
  * mapa TIENE que seguir visible y usable con la ficha abierta — es el punto
  * del feature.
  *
- * Altura fija de 70vh: deja siempre 30% de pantalla para el mapa, así el punto
- * que se está mirando nunca queda tapado. No lleva topes intermedios de
- * arrastre a propósito — con ellos vaul abría la ficha apenas asomando por el
- * borde, y de todos modos no hacen falta: se scrollea adentro para ver más y
- * se arrastra el borde superior hacia abajo para cerrar.
+ * Dos topes de arrastre: abre mostrando lo esencial —nombre y primeras filas
+ * de datos— y se sube para ver el resto. Nunca pasa del 60%, así el mapa
+ * conserva el 40% de arriba y el punto que se está mirando no queda tapado.
+ *
+ * OJO con el alto del contenido. vaul mueve la ficha con
+ * `translate3d(0, ventana − tope × ventana)`, cuenta que asume que el elemento
+ * arranca pegado al borde de arriba. Si se le da un alto parcial y se lo ancla
+ * abajo, ese desplazamiento se SUMA al que ya trae y la ficha aparece asomando
+ * apenas por el borde. Por eso el contenedor va a pantalla completa y quien
+ * define lo que se ve es el bloque de adentro, con el alto del tope mayor.
  */
+
+/** Fracciones de pantalla. El mayor manda el alto del bloque de contenido. */
+export const TOPES = [0.34, 0.6]
 
 export function FichaMapa({
   marcador,
   onCerrar,
   onColocarPozo,
+  tope,
+  onTope,
 }: {
   marcador: MarcadorMapa | undefined
   onCerrar: () => void
+  tope: number | string | null
+  onTope: (tope: number | string | null) => void
   onColocarPozo: (finca: {
     farmId: string
     lat: number
@@ -45,16 +57,22 @@ export function FichaMapa({
       onOpenChange={(abierto) => {
         if (!abierto) onCerrar()
       }}
+      snapPoints={TOPES}
+      activeSnapPoint={tope}
+      setActiveSnapPoint={onTope}
       // Sin esto vaul atrapa el foco y el mapa deja de responder al dedo.
       modal={false}
     >
       <Drawer.Portal>
         <Drawer.Content
-          className="bg-card fixed inset-x-0 bottom-0 z-40 flex h-[70vh] flex-col rounded-t-xl border-t shadow-[0_-8px_30px_rgba(0,0,0,0.18)] outline-none"
+          className="bg-card fixed inset-x-0 bottom-0 z-40 h-full rounded-t-xl border-t shadow-[0_-8px_30px_rgba(0,0,0,0.18)] outline-none"
           // El aria-describedby vacío evita el warning de Radix por no tener
           // descripción: el contenido de la ficha ES la descripción.
           aria-describedby={undefined}
         >
+          {/* El alto es el del tope mayor, no el del contenedor: es lo que
+              llega a verse, y todo lo que quede debajo sería espacio muerto. */}
+          <div className="flex h-[60vh] flex-col">
           {/* El agarre: la zona ancha de arrastre del borde superior. */}
           <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-muted-foreground/30" />
 
@@ -192,6 +210,7 @@ export function FichaMapa({
               </div>
             </>
           ) : null}
+          </div>
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>

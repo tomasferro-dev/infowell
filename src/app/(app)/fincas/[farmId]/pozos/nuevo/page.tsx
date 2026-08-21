@@ -38,6 +38,10 @@ export default async function NuevoPozoPage({
   // Una sola coordenada no ubica nada: o vienen las dos o no viene ninguna.
   const desdeMapa = latitude !== null && longitude !== null
 
+  /** Lo que el usuario había escrito antes de irse al mapa a marcar el punto. */
+  const texto = (valor: string | string[] | undefined) =>
+    typeof valor === 'string' && valor !== '' ? valor : null
+
   await requireAccess('write', 'well', farmId)
 
   const finca = await obtenerFinca(farmId)
@@ -59,19 +63,16 @@ export default async function NuevoPozoPage({
       <PozoForm
         action={action}
         textoBoton="Crear pozo"
-        pozo={
-          desdeMapa
-            ? {
-                name: '',
-                code: null,
-                latitude,
-                longitude,
-                drilledAt: null,
-                notes: null,
-              }
-            : undefined
-        }
+        pozo={{
+          name: texto(query.name) ?? '',
+          code: texto(query.code),
+          latitude,
+          longitude,
+          drilledAt: texto(query.drilledAt),
+          notes: texto(query.notes),
+        }}
         origenUbicacion={desdeMapa ? 'mapa' : undefined}
+        farmIdParaMapa={farmId}
       />
     </div>
   )

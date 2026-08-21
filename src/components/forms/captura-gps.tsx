@@ -1,6 +1,6 @@
 'use client'
 
-import { Crosshair, Loader2, MapPin, X } from 'lucide-react'
+import { Crosshair, Loader2, Map, MapPin, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,7 @@ export function CapturaGps({
   etiqueta = 'Ubicación',
   ayuda,
   origen,
+  onElegirEnMapa,
 }: {
   nombreLat?: string
   nombreLon?: string
@@ -54,6 +55,14 @@ export function CapturaGps({
    * en el mapa hace tres segundos.
    */
   origen?: 'mapa'
+  /**
+   * Botón para elegir el punto en el mapa, si esta pantalla puede ofrecerlo.
+   *
+   * El GPS sirve estando parado sobre el pozo. Desde la oficina, o cuando el
+   * pozo está a doscientos metros del auto, marcar sobre la imagen satelital
+   * es la única forma razonable de cargarlo.
+   */
+  onElegirEnMapa?: () => void
 }) {
   const [lectura, setLectura] = useState<Lectura | undefined>(() =>
     latInicial && lonInicial
@@ -171,33 +180,74 @@ export function CapturaGps({
             </Button>
           </div>
 
+          <div className="flex gap-2">
+            {soportado ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={buscar}
+                disabled={buscando}
+                className="flex-1"
+              >
+                {buscando ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Crosshair className="size-4" />
+                )}
+                Volver a medir
+              </Button>
+            ) : null}
+
+            {onElegirEnMapa ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onElegirEnMapa}
+                className="flex-1"
+              >
+                <Map className="size-4" />
+                Elegir en el mapa
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {!lectura ? (
+        <div className="space-y-2">
           {soportado ? (
             <Button
               type="button"
               variant="outline"
-              size="sm"
               onClick={buscar}
               disabled={buscando}
-              className="w-full"
+              className="h-12 w-full text-base"
             >
-              {buscando ? <Loader2 className="size-4 animate-spin" /> : <Crosshair className="size-4" />}
-              Volver a medir
+              {buscando ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Crosshair className="size-4" />
+              )}
+              {buscando ? 'Buscando señal…' : 'Marcar con GPS'}
+            </Button>
+          ) : null}
+
+          {/* La otra mitad del problema: el GPS solo sirve estando parado
+              encima. Marcar sobre la imagen cubre todo lo demás. */}
+          {onElegirEnMapa ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onElegirEnMapa}
+              className="h-12 w-full text-base"
+            >
+              <Map className="size-4" />
+              Elegir en el mapa
             </Button>
           ) : null}
         </div>
-      ) : null}
-
-      {!lectura && soportado ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={buscar}
-          disabled={buscando}
-          className="h-12 w-full text-base"
-        >
-          {buscando ? <Loader2 className="size-4 animate-spin" /> : <Crosshair className="size-4" />}
-          {buscando ? 'Buscando señal…' : 'Marcar con GPS'}
-        </Button>
       ) : null}
 
       {buscando ? (

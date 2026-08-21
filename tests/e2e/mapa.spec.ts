@@ -209,6 +209,169 @@ test.describe('crear un pozo desde el mapa', () => {
   })
 })
 
+test.describe('elegir el punto en el mapa desde el formulario', () => {
+  test('lleva lo ya escrito, y vuelve con la ubicación y el texto intactos', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(`/fincas/${datos.fincaPropiaId}/pozos/nuevo`)
+
+    // El GPS solo sirve estando parado sobre el pozo; desde la oficina hay que
+    // poder marcarlo sobre la imagen.
+    const nombre = `Pozo desde el form ${marca}`
+    await escribir(page.getByLabel('Nombre del pozo'), nombre)
+    await escribir(page.getByLabel('Código interno'), 'PF-9')
+
+    await page.getByRole('button', { name: 'Elegir en el mapa' }).click()
+
+    await expect(page).toHaveURL(/\/mapa\?/)
+    await esperarMapa(page)
+    await expect(page.locator('[data-colocando="true"]')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+
+    // Vuelve al alta con la ubicación puesta Y sin haber perdido lo escrito,
+    // que es lo que haría que nadie use el botón una segunda vez.
+    await expect(page).toHaveURL(/\/pozos\/nuevo\?/)
+    await expect(page.getByText('Marcada en el mapa')).toBeVisible()
+    await expect(page.getByLabel('Nombre del pozo')).toHaveValue(nombre)
+    await expect(page.getByLabel('Código interno')).toHaveValue('PF-9')
+
+    await page.getByRole('button', { name: 'Crear pozo' }).click()
+    await expect(page).toHaveURL('/mapa')
+    await esperarMapa(page)
+    await expect(page.locator(`.marcador-mapa[aria-label="Pozo ${nombre}"]`)).toHaveCount(1)
+  })
+
+  test('también se puede corregir la ubicación de un pozo ya cargado', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(`/fincas/${datos.fincaPropiaId}/pozos/${datos.pozoPropioId}/editar`)
+
+    await expect(page.getByRole('heading', { name: 'Editar pozo' })).toBeVisible()
+    const nombre = await page.getByLabel('Nombre del pozo').inputValue()
+
+    // Es justo cuando más se necesita: el pozo quedó mal ubicado y hay que
+    // moverlo. Si el botón solo existiera al crear, no habría forma.
+    await page.getByRole('button', { name: 'Elegir en el mapa' }).click()
+    await esperarMapa(page)
+    await expect(page.locator('[data-colocando="true"]')).toBeVisible()
+    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+
+    // Vuelve a la EDICIÓN, no al alta.
+    await expect(page).toHaveURL(/\/pozos\/[^/]+\/editar\?/)
+    await expect(page.getByText('Marcada en el mapa')).toBeVisible()
+    await expect(page.getByLabel('Nombre del pozo')).toHaveValue(nombre)
+  })
+})
+
+test.describe('la ficha tiene dos alturas', () => {
+  /** Cuánta pantalla ocupa la ficha, en porcentaje. */
+  async function alturaFicha(page: import('@playwright/test').Page) {
+    return page.evaluate(() => {
+      const d = document.querySelector('[data-vaul-drawer]')
+      if (!d) return 0
+      const alto = window.innerHeight
+      return Math.round(((alto - d.getBoundingClientRect().top) / alto) * 100)
+    })
+  }
+
+  test('abre chica y se puede subir arrastrando', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+
+    await page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`).click()
+    await expect(page.locator('[data-vaul-drawer]')).toBeVisible()
+
+    // Abre mostrando lo esencial y dejando ver el mapa. Si esto se rompe, se
+    // rompe hacia el lado peligroso: vaul deja la ficha asomando apenas por el
+    // borde, sin tirar ningún error. Ver el comentario en ficha-mapa.tsx.
+    await expect.poll(() => alturaFicha(page)).toBeGreaterThan(25)
+    await expect.poll(() => alturaFicha(page)).toBeLessThan(45)
+
+    // Lo esencial es el nombre y las primeras filas de datos.
+    const ficha = page.locator('[data-vaul-drawer]')
+    await expect(ficha.getByText('Pozos')).toBeVisible()
+    await expect(ficha.getByText('Coordenadas')).toBeVisible()
+
+    // Arrastrando el borde de arriba se sube al tope grande.
+    const caja = (await ficha.boundingBox())!
+    await page.mouse.move(caja.x + caja.width / 2, caja.y + 12)
+    await page.mouse.down()
+    await page.mouse.move(caja.x + caja.width / 2, caja.y - 220, { steps: 14 })
+    await page.mouse.up()
+
+    await expect.poll(() => alturaFicha(page)).toBeGreaterThan(50)
+    // Y nunca se come toda la pantalla: el mapa conserva su franja.
+    await expect.poll(() => alturaFicha(page)).toBeLessThan(70)
+  })
+
+  test('el encuadre acompaña: el punto no queda tapado en ningún tope', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+
+    await page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`).click()
+    const ficha = page.locator('[data-vaul-drawer]')
+    await expect(ficha).toBeVisible()
+
+    const tapado = () =>
+      page.evaluate(() => {
+        const activo = document.querySelector('.marcador-mapa[data-activo="true"]')
+        const d = document.querySelector('[data-vaul-drawer]')
+        if (!activo || !d) return true
+        return activo.getBoundingClientRect().bottom > d.getBoundingClientRect().top
+      })
+
+    await expect.poll(tapado).toBe(false)
+
+    const caja = (await ficha.boundingBox())!
+    await page.mouse.move(caja.x + caja.width / 2, caja.y + 12)
+    await page.mouse.down()
+    await page.mouse.move(caja.x + caja.width / 2, caja.y - 220, { steps: 14 })
+    await page.mouse.up()
+
+    // Al subir la ficha el mapa tiene que correrse, o el punto que se está
+    // mirando desaparece detrás de ella.
+    await expect(page.locator('[data-alto-ficha="0.6"]')).toBeVisible()
+    await expect.poll(tapado).toBe(false)
+  })
+})
+
+test.describe('el mapa recuerda dónde quedó', () => {
+  test('volviendo de otra pantalla retoma la misma vista', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+
+    const marcador = page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`)
+    await expect(marcador).toBeVisible()
+
+    // Se cierra la ficha antes de medir. Con la ficha abierta el encuadre
+    // descuenta su altura, y al volver —sin ficha— el mismo centro dibuja el
+    // marcador unos píxeles más abajo: se estaría midiendo eso y no la memoria.
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-vaul-drawer]')).toHaveCount(0)
+    await expect(page.locator('[data-alto-ficha="0"]')).toBeVisible()
+    await page.waitForTimeout(600)
+
+    const antes = (await marcador.boundingBox())!
+
+    // Se va y vuelve, como quien entra a cargar algo y regresa.
+    await page.goto('/fincas')
+    await expect(page.getByRole('heading', { name: 'Fincas' })).toBeVisible()
+    await page.goto('/mapa')
+    await esperarMapa(page)
+
+    await expect(marcador).toBeVisible()
+    const despues = (await marcador.boundingBox())!
+
+    // Sin memoria, el mapa volvería a encuadrar todo o a pedir el GPS, y el
+    // usuario perdería el lugar que venía mirando.
+    expect(Math.abs(despues.x - antes.x)).toBeLessThan(12)
+    expect(Math.abs(despues.y - antes.y)).toBeLessThan(12)
+  })
+})
+
 test.describe('el mapa respeta el alcance de cada rol', () => {
   test('el CLIENTE solo ve los puntos de su finca', async ({ page }) => {
     await login(page, `${marca}-cliente@test.local`)

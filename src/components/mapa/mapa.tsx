@@ -37,11 +37,61 @@ const CENTRO_POR_DEFECTO: [number, number] = [-68.8458, -32.8895]
  */
 const ZOOM_POZOS = 13
 
-/** Cuánto de la pantalla tapa la ficha. Debe coincidir con ficha-mapa.tsx. */
-const ALTO_FICHA = 0.7
-
 /** Zoom al que se coloca un pozo: suficiente para apuntar al cabezal. */
 const ZOOM_COLOCAR = 17
+
+/**
+ * Dónde quedó el mapa la última vez, dentro de esta sesión.
+ *
+ * La primera vez conviene arrancar en la ubicación del usuario. Pero yendo y
+ * viniendo entre el mapa y los formularios, volver a pedir el GPS y saltar a
+ * otro lado cada vez es desorientador: el usuario venía mirando una finca y de
+ * golpe está en otra parte. Se guarda la vista y se vuelve ahí.
+ *
+ * En sessionStorage y no en localStorage a propósito: si cierra la app y la
+ * abre al otro día, en otra finca, arrancar donde está parado vuelve a ser lo
+ * correcto.
+ */
+const CLAVE_VISTA = 'infowell:mapa:vista'
+
+type Vista = { lon: number; lat: number; zoom: number; pitch: number; bearing: number }
+
+function leerVista(): Vista | undefined {
+  try {
+    const crudo = sessionStorage.getItem(CLAVE_VISTA)
+    if (!crudo) return undefined
+
+    const v = JSON.parse(crudo) as Partial<Vista>
+    // Se valida antes de usar: lo de sessionStorage puede estar corrupto o
+    // venir de una versión anterior, y un NaN en el centro rompe el mapa.
+    const numeros = [v.lon, v.lat, v.zoom, v.pitch, v.bearing]
+    if (!numeros.every((n) => typeof n === 'number' && Number.isFinite(n))) return undefined
+    if (Math.abs(v.lat!) > 90 || Math.abs(v.lon!) > 180) return undefined
+
+    return v as Vista
+  } catch {
+    // Modo incógnito y algunos navegadores tiran al tocar sessionStorage.
+    return undefined
+  }
+}
+
+function guardarVista(mapa: maplibregl.Map) {
+  try {
+    const c = mapa.getCenter()
+    sessionStorage.setItem(
+      CLAVE_VISTA,
+      JSON.stringify({
+        lon: c.lng,
+        lat: c.lat,
+        zoom: mapa.getZoom(),
+        pitch: mapa.getPitch(),
+        bearing: mapa.getBearing(),
+      } satisfies Vista),
+    )
+  } catch {
+    // Si no se puede guardar, el mapa sigue andando: solo pierde la memoria.
+  }
+}
 
 export function Mapa({
   marcadores,
@@ -51,12 +101,13 @@ export function Mapa({
   onColocar,
   onCancelarColocacion,
   irAMiUbicacion = true,
+  altoFicha = 0,
 }: {
   marcadores: MarcadorMapa[]
   seleccionado?: MarcadorMapa
   onSeleccion: (marcador: MarcadorMapa | undefined) => void
   /** Punto desde donde arranca la colocación, o undefined si no está activa. */
-  colocando?: { lat: number; lon: number; nombreFinca: string }
+  colocando?: { lat: number; lon: number; nombreFinca: string; sinPunto?: boolean }
   onColocar: (lat: number, lon: number) => void
   onCancelarColocacion: () => void
   /**
@@ -68,6 +119,8 @@ export function Mapa({
    * moviéndose sin parar.
    */
   irAMiUbicacion?: boolean
+  /** Fracción de pantalla que tapa la ficha, para descontarla del encuadre. */
+  altoFicha?: number
 }) {
   const contenedor = useRef<HTMLDivElement>(null)
 
@@ -87,15 +140,18 @@ export function Mapa({
   useEffect(() => {
     if (!contenedor.current || !CLAVE) return
 
+    const guardada = leerVista()
+
     const m = new maplibregl.Map({
       container: contenedor.current,
       // Híbrido y no satélite pelado: los nombres de ruta y de paraje son lo
       // que permite ubicarse en el campo, donde no hay otra referencia.
       style: `https://api.maptiler.com/maps/hybrid/style.json?key=${CLAVE}`,
-      center: CENTRO_POR_DEFECTO,
-      zoom: 8,
+      center: guardada ? [guardada.lon, guardada.lat] : CENTRO_POR_DEFECTO,
+      zoom: guardada?.zoom ?? 8,
+      bearing: guardada?.bearing ?? 0,
       // La inclinación es lo que da la sensación de Earth sin traer un motor 3D.
-      pitch: 0,
+      pitch: guardada?.pitch ?? 0,
       maxPitch: 70,
       attributionControl: { compact: true },
     })
@@ -115,15 +171,24 @@ export function Mapa({
     // el componente (StrictMode en desarrollo lo hace siempre), y esperarlo
     // dejaba el mapa mudo. El control necesita un tick para quedar armado, así
     // que trigger() va en el siguiente turno del reloj.
-    const reloj = irAMiUbicacion ? setTimeout(() => ubicacion.trigger(), 300) : undefined
+    // Si ya hay una vista guardada, no se pide el GPS: el usuario está yendo
+    // y viniendo entre pantallas y saltarle el encuadre sería perderlo.
+    const reloj =
+      irAMiUbicacion && !guardada ? setTimeout(() => ubicacion.trigger(), 300) : undefined
 
     // Tocar la imagen (no un marcador) cierra la ficha abierta.
     m.on('click', () => alSeleccionar.current(undefined))
+
+    const recordar = () => guardarVista(m)
+    m.on('moveend', recordar)
+    m.on('zoomend', recordar)
 
     setMapa(m)
 
     return () => {
       if (reloj !== undefined) clearTimeout(reloj)
+      m.off('moveend', recordar)
+      m.off('zoomend', recordar)
       m.remove()
       setMapa(undefined)
     }
@@ -132,9 +197,16 @@ export function Mapa({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* Encuadre inicial: todo lo que el usuario puede ver entra en pantalla. */
+  /**
+   * Encuadre inicial: todo lo que el usuario puede ver entra en pantalla.
+   *
+   * Solo la primera vez. Si hay una vista guardada o se pidió un punto
+   * concreto, pisarlas sería justamente lo que se quiere evitar.
+   */
+  const [encuadrar] = useState(() => leerVista() === undefined)
+
   useEffect(() => {
-    if (!mapa || marcadores.length === 0) return
+    if (!mapa || !encuadrar || seleccionado || marcadores.length === 0) return
 
     const limites = marcadores.reduce(
       (acc, p) => acc.extend([p.lon, p.lat]),
@@ -145,6 +217,9 @@ export function Mapa({
     )
 
     mapa.fitBounds(limites, { padding: 64, maxZoom: 15, animate: false })
+    // seleccionado y encuadrar se leen una sola vez, al montar: agregarlos
+    // como dependencias reencuadraría el mapa cada vez que se toca un punto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapa, marcadores])
 
   /* Marcadores. Son elementos del DOM que el mapa posiciona, no capas del
@@ -210,8 +285,11 @@ export function Mapa({
   useEffect(() => {
     if (!mapa || !colocando) return
 
+    // Si la finca todavía no está ubicada no hay adónde volar: se coloca sobre
+    // lo que el usuario esté mirando, que es mejor que mandarlo al golfo de
+    // Guinea, que es donde queda el 0,0.
     mapa.easeTo({
-      center: [colocando.lon, colocando.lat],
+      ...(colocando.sinPunto ? {} : { center: [colocando.lon, colocando.lat] as [number, number] }),
       zoom: Math.max(mapa.getZoom(), ZOOM_COLOCAR),
       padding: { top: 0, left: 0, right: 0, bottom: 0 },
       duration: 600,
@@ -242,15 +320,16 @@ export function Mapa({
   /**
    * Encuadre del punto elegido.
    *
-   * Centrarlo a secas lo dejaría justo detrás de la ficha, que ocupa el 70% de
-   * abajo. El `padding` le dice al mapa que el área útil es solo la franja que
-   * queda a la vista, y ahí sí el punto queda donde el usuario lo puede ver.
+   * Centrarlo a secas lo dejaría justo detrás de la ficha. El `padding` le dice
+   * al mapa que el área útil es solo la franja que queda a la vista, y ahí sí
+   * el punto queda donde el usuario lo puede ver. Se recalcula al cambiar de
+   * tope: si la ficha sube, el mapa acompaña.
    */
   useEffect(() => {
     if (!mapa || colocando) return
 
     const alto = mapa.getContainer().clientHeight
-    const relleno = { top: 0, left: 0, right: 0, bottom: seleccionado ? alto * ALTO_FICHA : 0 }
+    const relleno = { top: 0, left: 0, right: 0, bottom: alto * altoFicha }
 
     if (seleccionado) {
       mapa.easeTo({
@@ -262,7 +341,7 @@ export function Mapa({
     } else {
       mapa.easeTo({ padding: relleno, duration: 300 })
     }
-  }, [mapa, seleccionado, colocando])
+  }, [mapa, seleccionado, colocando, altoFicha])
 
   if (!CLAVE) {
     return (
@@ -287,6 +366,7 @@ export function Mapa({
         className="pointer-events-auto h-full w-full"
         // Los tests esperan a que el mapa exista antes de tocar un marcador.
         data-listo={mapa !== undefined}
+      data-alto-ficha={altoFicha}
       />
 
       {colocando ? (

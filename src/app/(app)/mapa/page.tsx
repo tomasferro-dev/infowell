@@ -30,6 +30,25 @@ export default async function MapaPage({
    */
   const punto = typeof query.punto === 'string' ? query.punto : undefined
 
+  /*
+   * `?colocar=<farmId>` abre directo en modo colocación, desde el formulario
+   * de alta de pozo. Los demás campos vienen de arrastre para no perder lo que
+   * el usuario ya había escrito, y vuelven tal cual al formulario.
+   *
+   * El farmId no se valida contra la base: se usa solo para armar una ruta
+   * interna, y esa página tiene su propio guard. Uno inventado termina en un
+   * 404, no en un acceso.
+   */
+  const colocar = typeof query.colocar === 'string' ? query.colocar : undefined
+  // Si viene, la colocación es para corregir un pozo que ya existe.
+  const pozoAEditar = typeof query.pozo === 'string' ? query.pozo : undefined
+
+  const borrador: Record<string, string> = {}
+  for (const campo of ['name', 'code', 'drilledAt', 'notes']) {
+    const valor = query[campo]
+    if (typeof valor === 'string' && valor !== '') borrador[campo] = valor
+  }
+
   const sinUbicar = pozosSinUbicar + fincasSinUbicar
 
   return (
@@ -37,8 +56,15 @@ export default async function MapaPage({
        menos el encabezado y la barra de navegación. */
     <div className="fixed inset-x-0 top-16 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10">
       <div className="absolute inset-0">
-        {marcadores.length > 0 ? (
-          <VistaMapa marcadores={marcadores} sinUbicar={sinUbicar} puntoInicial={punto} />
+        {marcadores.length > 0 || colocar ? (
+          <VistaMapa
+            marcadores={marcadores}
+            sinUbicar={sinUbicar}
+            puntoInicial={punto}
+            colocarEnFinca={colocar}
+            pozoAEditar={pozoAEditar}
+            borrador={borrador}
+          />
         ) : (
           <div className="bg-muted/30 flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
             <MapPinOff className="text-muted-foreground size-8" />

@@ -53,7 +53,7 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 tsc          0 errores
 eslint       0 errores
 vitest       110 tests
-playwright   218 tests e2e (contra Supabase real, 2 viewports)
+playwright   228 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -635,6 +635,48 @@ Si algún día hay tantas fincas que ni acercándose alcanza, lo que corresponde
 es *clustering*, y eso implica pasar los marcadores de elementos del DOM a una
 fuente GeoJSON con capas de símbolos. No se hizo ahora porque a esta escala el
 costo no se justifica.
+
+### La ficha y sus dos alturas — y la trampa de vaul
+
+La ficha abre al **34%** de pantalla (nombre y primeras filas de datos) y se
+sube al **60%** arrastrando el borde. Nunca pasa de ahí: el mapa conserva su
+franja de arriba. El encuadre acompaña el tope activo, así que el punto que se
+está mirando no queda tapado en ninguna de las dos alturas.
+
+⚠️ **El alto del contenido no es libre.** vaul mueve la ficha con
+`translate3d(0, ventana − tope × ventana)`, cuenta que asume que el elemento
+arranca pegado al borde de arriba. Si se le da un alto parcial y se lo ancla
+abajo —lo natural para un panel inferior—, ese desplazamiento se SUMA al que ya
+trae y la ficha aparece **asomando apenas por el borde**, sin ningún error.
+Por eso el contenedor va a pantalla completa y quien define lo que se ve es el
+bloque de adentro, con el alto del tope mayor.
+
+Esto costó un rato la primera vez y llevó a sacar los topes por completo. La
+respuesta estaba en `node_modules/vaul/dist/index.mjs`, no en la documentación.
+
+### El mapa recuerda dónde quedó
+
+La primera vez arranca en la ubicación del usuario. Pero yendo y viniendo entre
+el mapa y los formularios, volver a pedir el GPS y saltar cada vez es
+desorientador: el usuario venía mirando una finca y de golpe está en otra parte.
+La vista (centro, zoom, inclinación, rumbo) se guarda en **sessionStorage** y se
+retoma al volver.
+
+En sessionStorage y no en localStorage a propósito: si cierra la app y la abre
+al otro día, en otra finca, arrancar donde está parado vuelve a ser lo correcto.
+
+Lo guardado se valida antes de usarse — puede estar corrupto o venir de una
+versión anterior, y un `NaN` en el centro rompe el mapa.
+
+### Elegir el punto en el mapa desde el formulario
+
+El GPS sirve estando parado sobre el pozo. Desde la oficina, o cuando el pozo
+está a doscientos metros del auto, marcar sobre la imagen es la única forma
+razonable. El botón **«Elegir en el mapa»** está tanto en el alta como en la
+edición —al editar es cuando más se necesita, para corregir uno mal ubicado— y
+se lleva lo que el usuario ya escribió, devolviéndolo intacto. Sin eso, ir al
+mapa desde un formulario a medio llenar lo borraría y nadie usaría el botón una
+segunda vez.
 
 ### Seguridad
 
