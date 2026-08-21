@@ -23,15 +23,53 @@ const prisma = new PrismaClient({
 
 const CLAVE_TEST = 'clave-de-prueba-123'
 
+/**
+ * Un punto propio para cada corrida, derivado de la marca.
+ *
+ * Fijarlo daría el mismo lugar para todos los workers, y con cuatro corriendo
+ * en paralelo quedan cuatro pines exactamente encima del otro: el de arriba
+ * tapa a los demás y ningún test puede tocar el suyo. Separarlos es lo que
+ * hace que el mapa sea testeable en paralelo.
+ */
+function puntoDeLaCorrida(marca: string) {
+  let h = 0
+  for (const c of marca) h = (h * 31 + c.charCodeAt(0)) % 100_000
+
+  // Alrededor de Mendoza, en una grilla de ~1 grado. Sobra para que no se
+  // pisen ni a zoom medio.
+  return {
+    lat: (-33.05 + (h % 100) * 0.01).toFixed(7),
+    lon: (-68.9 + (Math.floor(h / 100) % 100) * 0.01).toFixed(7),
+  }
+}
+
 async function setup(marca: string) {
   const passwordHash = await bcrypt.hash(CLAVE_TEST, 10)
+  const punto = puntoDeLaCorrida(marca)
+
+  // La medición necesita un autor y el admin del seed siempre está.
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: 'ADMIN' },
+    select: { id: true },
+  })
 
   const fincaPropia = await prisma.farm.create({
     data: {
       name: `${marca} Finca Propia`,
-      // Un pozo propio listo: así cada test es independiente y no depende de
-      // que otro lo haya creado antes.
-      wells: { create: { name: `Pozo ${marca}` } },
+      // Un pozo propio listo, ubicado: así cada test es independiente y no
+      // depende de que otro lo haya creado antes. Las coordenadas lo ponen en
+      // el mapa; sin ellas los tests del mapa terminaban tocando pozos de los
+      // datos de demostración, que pueden no estar.
+      wells: {
+        create: {
+          name: `Pozo ${marca}`,
+          // El pozo, unos 200 m al noreste del casco.
+          latitude: (Number(punto.lat) + 0.002).toFixed(7),
+          longitude: (Number(punto.lon) + 0.002).toFixed(7),
+        },
+      },
+      latitude: punto.lat,
+      longitude: punto.lon,
     },
     select: { id: true, wells: { select: { id: true } } },
   })
@@ -53,6 +91,20 @@ async function setup(marca: string) {
       emailVerified: new Date(),
       passwordHash,
       memberships: { create: { farmId: fincaPropia.id } },
+    },
+  })
+
+  // Una medición sobre el pozo propio. Es lo que muestra la ficha del mapa, y
+  // sin esto los tests dependían de que hubiera datos demo cargados.
+  await prisma.wellStatusReading.create({
+    data: {
+      wellId: fincaPropia.wells[0]!.id,
+      measuredAt: new Date(),
+      createdById: admin.id,
+      depthM: '118.00',
+      staticLevelM: '30.00',
+      dynamicLevelM: '52.00',
+      flowRateM3H: '63.00',
     },
   })
 

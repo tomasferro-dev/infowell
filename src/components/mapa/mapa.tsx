@@ -2,9 +2,11 @@
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 
+import { Check, Crosshair, X } from 'lucide-react'
 import * as maplibregl from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
 import type { MarcadorMapa } from '@/server/queries/farms'
 
 /**
@@ -38,14 +40,34 @@ const ZOOM_POZOS = 13
 /** Cuánto de la pantalla tapa la ficha. Debe coincidir con ficha-mapa.tsx. */
 const ALTO_FICHA = 0.7
 
+/** Zoom al que se coloca un pozo: suficiente para apuntar al cabezal. */
+const ZOOM_COLOCAR = 17
+
 export function Mapa({
   marcadores,
   seleccionado,
   onSeleccion,
+  colocando,
+  onColocar,
+  onCancelarColocacion,
+  irAMiUbicacion = true,
 }: {
   marcadores: MarcadorMapa[]
   seleccionado?: MarcadorMapa
   onSeleccion: (marcador: MarcadorMapa | undefined) => void
+  /** Punto desde donde arranca la colocación, o undefined si no está activa. */
+  colocando?: { lat: number; lon: number; nombreFinca: string }
+  onColocar: (lat: number, lon: number) => void
+  onCancelarColocacion: () => void
+  /**
+   * Si arranca yendo a la ubicación del usuario.
+   *
+   * Se apaga cuando el mapa se abrió sobre un punto concreto (`?punto=`): el
+   * usuario pidió ESE pozo, no dónde está parado. Además el seguimiento de
+   * ubicación recentra solo y le pelearía al encuadre, dejando los pines
+   * moviéndose sin parar.
+   */
+  irAMiUbicacion?: boolean
 }) {
   const contenedor = useRef<HTMLDivElement>(null)
 
@@ -93,7 +115,7 @@ export function Mapa({
     // el componente (StrictMode en desarrollo lo hace siempre), y esperarlo
     // dejaba el mapa mudo. El control necesita un tick para quedar armado, así
     // que trigger() va en el siguiente turno del reloj.
-    const reloj = setTimeout(() => ubicacion.trigger(), 300)
+    const reloj = irAMiUbicacion ? setTimeout(() => ubicacion.trigger(), 300) : undefined
 
     // Tocar la imagen (no un marcador) cierra la ficha abierta.
     m.on('click', () => alSeleccionar.current(undefined))
@@ -101,10 +123,13 @@ export function Mapa({
     setMapa(m)
 
     return () => {
-      clearTimeout(reloj)
+      if (reloj !== undefined) clearTimeout(reloj)
       m.remove()
       setMapa(undefined)
     }
+    // irAMiUbicacion no entra como dependencia: se decide al abrir el mapa y
+    // recrearlo por eso tiraría abajo la vista que el usuario está mirando.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /* Encuadre inicial: todo lo que el usuario puede ver entra en pantalla. */
@@ -168,6 +193,43 @@ export function Mapa({
     }
   }, [mapa, marcadores])
 
+  /**
+   * Modo colocación.
+   *
+   * La mira queda fija en el centro y el usuario mueve el mapa por debajo. Es
+   * al revés de tocar el punto con el dedo, y es a propósito: el dedo tapa
+   * justo lo que hay que mirar, y en un cabezal de pozo de un metro eso es la
+   * diferencia entre marcarlo bien y marcar el tinglado de al lado.
+   *
+   * La lectura se refresca al soltar y no durante el arrastre: durante el
+   * arrastre el evento corre a 60 por segundo y nadie lee un número que se
+   * mueve así.
+   */
+  const [centro, setCentro] = useState<{ lat: number; lon: number }>()
+
+  useEffect(() => {
+    if (!mapa || !colocando) return
+
+    mapa.easeTo({
+      center: [colocando.lon, colocando.lat],
+      zoom: Math.max(mapa.getZoom(), ZOOM_COLOCAR),
+      padding: { top: 0, left: 0, right: 0, bottom: 0 },
+      duration: 600,
+    })
+
+    const leerCentro = () => {
+      const c = mapa.getCenter()
+      setCentro({ lat: c.lat, lon: c.lng })
+    }
+
+    leerCentro()
+    mapa.on('moveend', leerCentro)
+
+    return () => {
+      mapa.off('moveend', leerCentro)
+    }
+  }, [mapa, colocando])
+
   /* El marcador abierto se resalta, para no perderlo detrás de la ficha. */
   useEffect(() => {
     if (!contenedor.current) return
@@ -185,7 +247,7 @@ export function Mapa({
    * queda a la vista, y ahí sí el punto queda donde el usuario lo puede ver.
    */
   useEffect(() => {
-    if (!mapa) return
+    if (!mapa || colocando) return
 
     const alto = mapa.getContainer().clientHeight
     const relleno = { top: 0, left: 0, right: 0, bottom: seleccionado ? alto * ALTO_FICHA : 0 }
@@ -200,7 +262,7 @@ export function Mapa({
     } else {
       mapa.easeTo({ padding: relleno, duration: 300 })
     }
-  }, [mapa, seleccionado])
+  }, [mapa, seleccionado, colocando])
 
   if (!CLAVE) {
     return (
@@ -214,16 +276,72 @@ export function Mapa({
   }
 
   return (
-    <div
-      ref={contenedor}
-      /* pointer-events-auto no es decorativo: vaul se apoya en Radix, que
-         pone `pointer-events: none` en el body mientras la ficha está abierta
-         aunque sea no-modal. Sin esto, con la ficha abierta no se puede tocar
-         otro marcador ni mover el mapa. Se devuelve solo acá: el resto de la
-         página sigue inerte, que es lo que corresponde. */
-      className="pointer-events-auto h-full w-full"
-      // Los tests esperan a que el mapa exista antes de tocar un marcador.
-      data-listo={mapa !== undefined}
-    />
+    <div className="relative h-full w-full">
+      <div
+        ref={contenedor}
+        /* pointer-events-auto no es decorativo: vaul se apoya en Radix, que
+           pone `pointer-events: none` en el body mientras la ficha está abierta
+           aunque sea no-modal. Sin esto, con la ficha abierta no se puede tocar
+           otro marcador ni mover el mapa. Se devuelve solo acá: el resto de la
+           página sigue inerte, que es lo que corresponde. */
+        className="pointer-events-auto h-full w-full"
+        // Los tests esperan a que el mapa exista antes de tocar un marcador.
+        data-listo={mapa !== undefined}
+      />
+
+      {colocando ? (
+        <>
+          {/* La mira. No intercepta el dedo: el mapa se tiene que poder
+              arrastrar tomándolo justo por el centro. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 grid place-items-center"
+          >
+            <Crosshair className="size-10 text-white drop-shadow-[0_0_3px_rgba(0,0,0,0.9)]" />
+          </div>
+
+          {/* Debajo del botón «Volver», que vive en la misma esquina. */}
+          <div className="pointer-events-none absolute inset-x-3 top-16 z-20">
+            <p className="bg-card/95 rounded-md border px-3 py-2 text-center text-sm shadow-md backdrop-blur">
+              Movés el mapa hasta poner la mira sobre el pozo.
+              <span className="text-muted-foreground block text-xs">
+                Se agrega a {colocando.nombreFinca}
+              </span>
+            </p>
+          </div>
+
+          <div
+            data-colocando="true"
+            className="bg-card/95 pointer-events-auto absolute inset-x-0 bottom-0 z-20 space-y-2 border-t p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] backdrop-blur"
+          >
+            <p className="text-muted-foreground text-center font-mono text-xs tabular-nums">
+              {centro ? `${centro.lat.toFixed(6)}, ${centro.lon.toFixed(6)}` : '—'}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-12 flex-1"
+                onClick={onCancelarColocacion}
+              >
+                <X className="size-4" />
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="h-12 flex-1"
+                disabled={!centro}
+                onClick={() => {
+                  if (centro) onColocar(centro.lat, centro.lon)
+                }}
+              >
+                <Check className="size-4" />
+                Poner el pozo acá
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
   )
 }

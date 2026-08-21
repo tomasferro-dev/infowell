@@ -53,7 +53,7 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 tsc          0 errores
 eslint       0 errores
 vitest       110 tests
-playwright   210 tests e2e (contra Supabase real, 2 viewports)
+playwright   218 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -433,9 +433,9 @@ puede tener memorizado.
 
 | Pendiente | Nota |
 |---|---|
+| **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
 | **Cargar coordenadas de las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos demo ya vienen ubicados; las fincas reales hay que salir a marcarlas. |
 | **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md — sin eso la clave sirve desde cualquier sitio. |
-| **Crear un pozo tocando un punto del mapa** | Hoy la ficha lleva al formulario de alta; no pasa la coordenada del punto tocado. |
 
 ### ⚠️ Separar Supabase dev/prod — pendiente recomendado
 
@@ -594,6 +594,47 @@ Cambiar de proveedor es una sola variable de entorno y el `style` del mapa.
   que el mapa posiciona, no capas del estilo: se pueden colgar apenas el mapa
   existe. El mapa vive en `useState`, no en un `ref`, para que los efectos que
   le cuelgan cosas vuelvan a correr cuando se recrea.
+
+### Crear un pozo desde el mapa
+
+Desde la ficha de una finca, «Agregar un pozo acá» entra en **modo colocación**:
+la mira queda fija en el centro y el usuario mueve el mapa por debajo. Es al
+revés de tocar el punto con el dedo, y es a propósito — el dedo tapa justo lo
+que hay que mirar, y en un cabezal de pozo de un metro eso es la diferencia
+entre marcarlo bien y marcar el tinglado de al lado.
+
+Al confirmar, las coordenadas viajan en la URL (`?lat=&lon=`) y el formulario
+abre con la ubicación puesta, diciendo «Marcada en el mapa». Se redondean a 7
+decimales, que es lo que guarda la columna: mandar los 15 dígitos de un float
+sería fingir una precisión que no existe ni en el GPS ni en la base.
+
+La URL la escribe cualquiera, así que la página valida: si no es un número
+dentro de rango se descarta en silencio y el formulario abre vacío. No muestra
+un error porque el usuario no escribió eso.
+
+El alta vuelve al mapa y no a la finca. El destino se pasa a la server action
+como **booleano**, nunca como ruta: el valor va y vuelve por el cliente, y
+aceptar una URL de ahí sería un redirect abierto.
+
+### `?punto=<id>` y el problema de los pines encimados
+
+A zoom amplio, dos fincas cercanas dibujan pines que se pisan y el de atrás no
+hay forma de tocarlo. La salida es acercarse — y para llegar directo está
+`/mapa?punto=<id>`, que abre el mapa ya encuadrado sobre esa finca o ese pozo.
+Es la entrada de «Ver en el mapa» desde la ficha de la finca y desde la tarjeta
+de coordenadas del pozo.
+
+El id no se valida contra nada: se busca dentro de los marcadores que el actor
+**ya** puede ver, así que un id ajeno simplemente no aparece.
+
+Cuando se entra por ahí, **no** se dispara la ubicación del usuario: pidió ese
+pozo, no dónde está parado. Además el seguimiento de ubicación recentra solo y
+le peleaba al encuadre, dejando los pines moviéndose sin parar.
+
+Si algún día hay tantas fincas que ni acercándose alcanza, lo que corresponde
+es *clustering*, y eso implica pasar los marcadores de elementos del DOM a una
+fuente GeoJSON con capas de símbolos. No se hizo ahora porque a esta escala el
+costo no se justifica.
 
 ### Seguridad
 

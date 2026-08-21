@@ -120,6 +120,8 @@ export async function crearIntervencionAction(
   })
 
   revalidatePath(`/fincas/${farmId}/pozos/${wellId}`)
+  // La ficha del mapa muestra el último estado y el conteo de intervenciones.
+  revalidatePath('/mapa')
   redirect(`/fincas/${farmId}/pozos/${wellId}`)
 }
 
@@ -283,6 +285,8 @@ export async function editarIntervencionAction(
   }
 
   revalidatePath(`/fincas/${farmId}/pozos/${wellId}`)
+  // La ficha del mapa muestra el último estado y el conteo de intervenciones.
+  revalidatePath('/mapa')
   redirect(`/fincas/${farmId}/pozos/${wellId}`)
 }
 
@@ -309,5 +313,7 @@ export async function archivarIntervencionAction(
   if (count === 0) return
 
   revalidatePath(`/fincas/${farmId}/pozos/${wellId}`)
+  // La ficha del mapa muestra el último estado y el conteo de intervenciones.
+  revalidatePath('/mapa')
   redirect(`/fincas/${farmId}/pozos/${wellId}`)
 }

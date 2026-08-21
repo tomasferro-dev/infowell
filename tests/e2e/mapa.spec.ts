@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
+import { escribir, limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
 
 /**
  * El mapa satelital.
@@ -55,22 +55,21 @@ test.describe('los puntos del mapa', () => {
       page.locator('.marcador-mapa[data-tipo="pozo"]:not([data-oculto="true"])'),
     ).toHaveCount(0)
 
-    // Al abrir una finca el mapa se acerca, y ahí sí aparecen sus pozos.
-    await page.locator('.marcador-mapa[data-tipo="finca"]').first().click()
-    await expect(
-      page.locator('.marcador-mapa[data-tipo="pozo"]:not([data-oculto="true"])').first(),
-    ).toBeVisible()
+    // Entrando encuadrado en una finca, en cambio, sus pozos ya se ven.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await expect(page.locator(`.marcador-mapa[data-id="${datos.pozoPropioId}"]`)).toBeVisible()
   })
 
   test('la ficha del pozo trae su último estado y las acciones', async ({ page }) => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
-    await page.goto('/mapa')
+    // Se apunta AL pozo del fixture y no a "el primero que aparezca": el mapa
+    // muestra todas las fincas, y con .first() el test terminaba abriendo un
+    // pozo de otro lado —o uno recién creado por otro test, sin mediciones—.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
     await esperarMapa(page)
 
-    await page.locator('.marcador-mapa[data-tipo="finca"]').first().click()
-    const pozo = page
-      .locator('.marcador-mapa[data-tipo="pozo"]:not([data-oculto="true"])')
-      .first()
+    const pozo = page.locator(`.marcador-mapa[data-id="${datos.pozoPropioId}"]`)
     await expect(pozo).toBeVisible()
     await pozo.click()
 
@@ -88,10 +87,10 @@ test.describe('los puntos del mapa', () => {
 
   test('el punto elegido queda a la vista y no detrás de la ficha', async ({ page }) => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
-    await page.goto('/mapa')
+    // Se entra encuadrado en la finca del fixture: a zoom amplio los pines de
+    // fincas cercanas se pisan y el de atrás no se puede tocar.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
     await esperarMapa(page)
-
-    await page.locator('.marcador-mapa[data-tipo="finca"]').first().click()
     await expect(page.locator('[data-vaul-drawer]')).toBeVisible()
 
     // Es el punto del feature: la ficha ocupa el 70% de abajo, así que el
@@ -109,22 +108,104 @@ test.describe('los puntos del mapa', () => {
 
   test('con la ficha abierta el mapa sigue respondiendo', async ({ page }) => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
-    await page.goto('/mapa')
+    // Se entra encuadrado en la finca del fixture: a zoom amplio los pines de
+    // fincas cercanas se pisan y el de atrás no se puede tocar.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
     await esperarMapa(page)
-
-    await page.locator('.marcador-mapa[data-tipo="finca"]').first().click()
     await expect(page.locator('[data-vaul-drawer]')).toBeVisible()
 
     // vaul se apoya en Radix, que apaga los eventos del body aunque el drawer
     // sea no-modal. Si esto se rompe, tocar otro punto deja de funcionar y no
     // hay ningún error que lo delate. Se toca sin force a propósito.
-    const pozo = page
-      .locator('.marcador-mapa[data-tipo="pozo"]:not([data-oculto="true"])')
-      .first()
+    const pozo = page.locator(`.marcador-mapa[data-id="${datos.pozoPropioId}"]`)
     await expect(pozo).toBeVisible()
     await pozo.click()
 
     await expect(page.locator('[data-vaul-drawer]').getByText('Profundidad')).toBeVisible()
+  })
+})
+
+test.describe('crear un pozo desde el mapa', () => {
+  test('se marca el punto con la mira y llega cargado al formulario', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    // Se entra encuadrado en la finca del fixture: a zoom amplio los pines de
+    // fincas cercanas se pisan y el de atrás no se puede tocar.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await page.getByRole('button', { name: 'Agregar un pozo acá' }).click()
+
+    // La ficha se va: el mapa tiene que quedar entero para poder apuntar.
+    await expect(page.locator('[data-vaul-drawer]')).toHaveCount(0)
+    await expect(page.getByText(/Movés el mapa hasta poner la mira/)).toBeVisible()
+
+    const barra = page.locator('[data-colocando="true"]')
+    await expect(barra).toBeVisible()
+
+    // La lectura del centro aparece antes de poder confirmar.
+    const lectura = barra.locator('p').first()
+    await expect(lectura).toHaveText(/-?\d+\.\d{6}, -?\d+\.\d{6}/)
+    const coordenadas = (await lectura.textContent())!.trim()
+
+    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+
+    // El formulario abre con la ubicación ya puesta y diciendo de dónde salió.
+    await expect(page).toHaveURL(/\/pozos\/nuevo\?lat=/)
+    await expect(page.getByRole('heading', { name: 'Nuevo pozo' })).toBeVisible()
+    await expect(page.getByText('Marcada en el mapa')).toBeVisible()
+
+    // Y es EXACTAMENTE el punto que se marcó, no uno parecido.
+    await expect(page.getByText(coordenadas)).toBeVisible()
+  })
+
+  test('el pozo queda guardado con esa ubicación y vuelve al mapa', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    // Se entra encuadrado en la finca del fixture: a zoom amplio los pines de
+    // fincas cercanas se pisan y el de atrás no se puede tocar.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await page.getByRole('button', { name: 'Agregar un pozo acá' }).click()
+    await expect(page.locator('[data-colocando="true"]')).toBeVisible()
+    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+
+    const nombre = `Pozo del mapa ${marca}`
+    await escribir(page.getByLabel('Nombre del pozo'), nombre)
+    await page.getByRole('button', { name: 'Crear pozo' }).click()
+
+    // Vuelve al mapa, que es de donde salió: mandarlo a la finca sería
+    // sacarlo del contexto en el que estaba trabajando.
+    await expect(page).toHaveURL('/mapa')
+    await esperarMapa(page)
+
+    // Y el pozo nuevo ya está dibujado, sin recargar a mano.
+    await expect(page.locator(`.marcador-mapa[aria-label="Pozo ${nombre}"]`)).toHaveCount(1)
+  })
+
+  test('se puede cancelar sin crear nada', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    // Se entra encuadrado en la finca del fixture: a zoom amplio los pines de
+    // fincas cercanas se pisan y el de atrás no se puede tocar.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await page.getByRole('button', { name: 'Agregar un pozo acá' }).click()
+    await expect(page.locator('[data-colocando="true"]')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Cancelar' }).click()
+
+    // Vuelve al mapa tal cual estaba, sin haber creado nada.
+    await expect(page.locator('[data-colocando="true"]')).toHaveCount(0)
+    await expect(page.locator('.marcador-mapa').first()).toBeVisible()
+  })
+
+  test('una coordenada inventada en la URL se descarta, no rompe el alta', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+
+    // La URL la escribe cualquiera. El formulario tiene que abrir usable.
+    await page.goto(`/fincas/${datos.fincaPropiaId}/pozos/nuevo?lat=no-es-un-numero&lon=999`)
+
+    await expect(page.getByRole('heading', { name: 'Nuevo pozo' })).toBeVisible()
+    await expect(page.getByText('Marcada en el mapa')).toHaveCount(0)
+    // Y queda la vía normal: marcar con el GPS.
+    await expect(page.getByRole('button', { name: 'Marcar con GPS' })).toBeVisible()
   })
 })
 

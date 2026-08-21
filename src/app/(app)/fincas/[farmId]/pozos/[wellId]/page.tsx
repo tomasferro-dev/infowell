@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 
 import { GraficoEvolucion } from '@/components/data/grafico-evolucion'
 import { PerfilPozo } from '@/components/data/perfil-pozo'
-import { IndicadorEnlace } from '@/components/layout/indicador-enlace'
+import { FlechaOCarga, IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { TimelinePozo } from '@/components/data/timeline-pozo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -115,11 +115,22 @@ export default async function PozoPage({
         ) : null}
       </div>
 
+      {/* Las coordenadas sueltas no le dicen nada a nadie: llevan al mapa,
+          que es donde significan algo. */}
       {pozo.latitude && pozo.longitude ? (
-        <Card>
-          <CardContent className="flex items-center gap-2 text-sm tabular-nums">
-            <MapPin className="text-muted-foreground size-4 shrink-0" />
-            {pozo.latitude.toString()}, {pozo.longitude.toString()}
+        <Card className="hover:bg-accent transition-colors">
+          <CardContent className="p-0">
+            <Link
+              href={`/mapa?punto=${wellId}`}
+              className="flex items-center gap-2 px-6 py-4 text-sm tabular-nums"
+            >
+              <MapPin className="text-muted-foreground size-4 shrink-0" />
+              <span className="flex-1">
+                {pozo.latitude.toString()}, {pozo.longitude.toString()}
+              </span>
+              <span className="text-muted-foreground shrink-0 text-xs">Ver en el mapa</span>
+              <FlechaOCarga />
+            </Link>
           </CardContent>
         </Card>
       ) : null}

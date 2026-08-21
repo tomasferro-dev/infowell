@@ -42,6 +42,7 @@ export async function crearFincaAction(
   const finca = await prisma.farm.create({ data: parsed.data, select: { id: true } })
 
   revalidatePath('/fincas')
+  revalidatePath('/mapa')
   redirect(`/fincas/${finca.id}`)
 }
 
@@ -61,6 +62,7 @@ export async function editarFincaAction(
 
   revalidatePath('/fincas')
   revalidatePath(`/fincas/${farmId}`)
+  revalidatePath('/mapa')
   redirect(`/fincas/${farmId}`)
 }
 
@@ -77,6 +79,7 @@ export async function archivarFincaAction(farmId: string) {
   })
 
   revalidatePath('/fincas')
+  revalidatePath('/mapa')
   redirect('/fincas')
 }
 
@@ -86,6 +89,14 @@ export async function archivarFincaAction(farmId: string) {
 
 export async function crearPozoAction(
   farmId: string,
+  /**
+   * Si el alta arrancó marcando el punto en el mapa, se vuelve al mapa.
+   *
+   * Es un booleano y no una ruta a propósito: el valor va y vuelve por el
+   * cliente, y aceptar una URL de ahí sería un redirect abierto. Acá el
+   * cliente solo elige entre dos destinos que están escritos en el servidor.
+   */
+  volverAlMapa: boolean,
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
@@ -107,7 +118,8 @@ export async function crearPozoAction(
   }
 
   revalidatePath(`/fincas/${farmId}`)
-  redirect(`/fincas/${farmId}`)
+  revalidatePath('/mapa')
+  redirect(volverAlMapa ? '/mapa' : `/fincas/${farmId}`)
 }
 
 export async function editarPozoAction(
@@ -133,6 +145,7 @@ export async function editarPozoAction(
   if (count === 0) return { error: 'No se encontró el pozo' }
 
   revalidatePath(`/fincas/${farmId}`)
+  revalidatePath('/mapa')
   redirect(`/fincas/${farmId}/pozos/${wellId}`)
 }
 
@@ -145,5 +158,6 @@ export async function archivarPozoAction(farmId: string, wellId: string) {
   })
 
   revalidatePath(`/fincas/${farmId}`)
+  revalidatePath('/mapa')
   redirect(`/fincas/${farmId}`)
 }

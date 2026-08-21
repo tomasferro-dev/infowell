@@ -26,9 +26,16 @@ import type { MarcadorMapa } from '@/server/queries/farms'
 export function FichaMapa({
   marcador,
   onCerrar,
+  onColocarPozo,
 }: {
   marcador: MarcadorMapa | undefined
   onCerrar: () => void
+  onColocarPozo: (finca: {
+    farmId: string
+    lat: number
+    lon: number
+    nombreFinca: string
+  }) => void
 }) {
   const esFinca = marcador?.tipo === 'finca'
 
@@ -137,13 +144,24 @@ export function FichaMapa({
                       <Accion href={`/fincas/${marcador.farmId}`} icono={SquareArrowOutUpRight}>
                         Abrir la finca
                       </Accion>
-                      <Accion
-                        href={`/fincas/${marcador.farmId}/pozos/nuevo`}
-                        icono={Plus}
-                        principal
+                      {/* No lleva al formulario de una: primero se marca el
+                          punto en el mapa. Estando parado en la finca eso es
+                          más fiable que el GPS, que puede tardar o errarle. */}
+                      <Button
+                        type="button"
+                        className="h-12 w-full justify-start text-sm"
+                        onClick={() =>
+                          onColocarPozo({
+                            farmId: marcador.farmId,
+                            lat: marcador.lat,
+                            lon: marcador.lon,
+                            nombreFinca: marcador.nombre,
+                          })
+                        }
                       >
-                        Agregar un pozo
-                      </Accion>
+                        <Plus className="size-4" />
+                        <span className="flex-1 text-left">Agregar un pozo acá</span>
+                      </Button>
                     </>
                   ) : (
                     <>

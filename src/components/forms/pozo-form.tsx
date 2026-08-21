@@ -19,10 +19,13 @@ export function PozoForm({
   action,
   pozo,
   textoBoton,
+  origenUbicacion,
 }: {
   action: (prev: FormState, formData: FormData) => Promise<FormState>
   pozo?: Pozo
   textoBoton?: string
+  /** De dónde salió la ubicación que ya viene cargada, para poder decirlo. */
+  origenUbicacion?: 'mapa'
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(action, {})
   const err = state.fieldErrors ?? {}
@@ -58,6 +61,7 @@ export function PozoForm({
       <CapturaGps
         latInicial={pozo?.latitude}
         lonInicial={pozo?.longitude}
+        origen={origenUbicacion}
         etiqueta="Ubicación del pozo"
         ayuda="Marcala parado al lado del pozo. Es lo que lo hace aparecer en el mapa."
       />

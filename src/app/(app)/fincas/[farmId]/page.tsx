@@ -40,14 +40,27 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
           ) : null}
         </div>
 
-        {puedeEditar ? (
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/fincas/${farmId}/editar`}>
-              <Pencil className="size-4" />
-              Editar
-            </Link>
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 gap-2">
+          {/* Solo si está ubicada: mandar al mapa a alguien que no aparece en
+              el mapa es mandarlo a una pantalla vacía. */}
+          {finca.latitude && finca.longitude ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/mapa?punto=${farmId}`}>
+                <MapPin className="size-4" />
+                Mapa
+              </Link>
+            </Button>
+          ) : null}
+
+          {puedeEditar ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/fincas/${farmId}/editar`}>
+                <Pencil className="size-4" />
+                Editar
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {ubicacion || finca.contactName || finca.contactPhone ? (

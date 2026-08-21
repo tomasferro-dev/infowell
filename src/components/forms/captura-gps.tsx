@@ -40,6 +40,7 @@ export function CapturaGps({
   lonInicial,
   etiqueta = 'Ubicación',
   ayuda,
+  origen,
 }: {
   nombreLat?: string
   nombreLon?: string
@@ -47,6 +48,12 @@ export function CapturaGps({
   lonInicial?: string | null
   etiqueta?: string
   ayuda?: string
+  /**
+   * De dónde salió la ubicación que ya viene cargada. Sin esto diría
+   * "Cargada anteriormente" a una coordenada que el usuario acaba de marcar
+   * en el mapa hace tres segundos.
+   */
+  origen?: 'mapa'
 }) {
   const [lectura, setLectura] = useState<Lectura | undefined>(() =>
     latInicial && lonInicial
@@ -147,7 +154,9 @@ export function CapturaGps({
                   {dudosa ? ' — conviene volver a medir al aire libre' : ''}
                 </p>
               ) : (
-                <p className="text-muted-foreground text-xs">Cargada anteriormente</p>
+                <p className="text-muted-foreground text-xs">
+                  {origen === 'mapa' ? 'Marcada en el mapa' : 'Cargada anteriormente'}
+                </p>
               )}
             </div>
             <Button

@@ -7,9 +7,28 @@ import { puntosDelMapa } from '@/server/queries/farms'
 
 export const metadata = { title: 'Mapa' }
 
-export default async function MapaPage() {
+export default async function MapaPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   // El acotamiento vive en la query: un CLIENTE solo recibe sus fincas.
-  const { marcadores, pozosSinUbicar, fincasSinUbicar } = await puntosDelMapa()
+  const [{ marcadores, pozosSinUbicar, fincasSinUbicar }, query] = await Promise.all([
+    puntosDelMapa(),
+    searchParams,
+  ])
+
+  /*
+   * `?punto=<id>` abre el mapa encuadrado en una finca o un pozo concreto.
+   *
+   * Es la entrada desde «Ver en el mapa», y resuelve un problema real: a zoom
+   * amplio los pines de dos fincas cercanas se pisan y no hay forma de tocar
+   * el de atrás. Llegando por acá se entra ya encima del punto buscado.
+   *
+   * No hace falta validar el id contra nada: se busca dentro de los marcadores
+   * que el actor YA puede ver. Un id ajeno simplemente no aparece.
+   */
+  const punto = typeof query.punto === 'string' ? query.punto : undefined
 
   const sinUbicar = pozosSinUbicar + fincasSinUbicar
 
@@ -19,7 +38,7 @@ export default async function MapaPage() {
     <div className="fixed inset-x-0 top-16 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10">
       <div className="absolute inset-0">
         {marcadores.length > 0 ? (
-          <VistaMapa marcadores={marcadores} />
+          <VistaMapa marcadores={marcadores} sinUbicar={sinUbicar} puntoInicial={punto} />
         ) : (
           <div className="bg-muted/30 flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
             <MapPinOff className="text-muted-foreground size-8" />
@@ -49,16 +68,6 @@ export default async function MapaPage() {
           Volver
         </Link>
       </Button>
-
-      {/* Lo que falta marcar se dice, no se omite: un mapa al que le faltan
-          pozos y no lo aclara se lee como un mapa completo. */}
-      {sinUbicar > 0 ? (
-        <p className="bg-card/90 text-muted-foreground absolute inset-x-3 bottom-3 z-20 rounded-md border px-3 py-2 text-center text-xs shadow-md backdrop-blur">
-          {sinUbicar === 1
-            ? 'Falta ubicar 1 registro con GPS.'
-            : `Faltan ubicar ${sinUbicar} registros con GPS.`}
-        </p>
-      ) : null}
     </div>
   )
 }
