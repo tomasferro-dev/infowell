@@ -96,3 +96,49 @@ test.describe('catálogo de electrobombas', () => {
     await expect(page.getByRole('heading', { name: 'Servicios' })).toBeVisible()
   })
 })
+
+test.describe('la barra de administración entra en el teléfono', () => {
+  /**
+   * Con «Configuración» como tercera pestaña, el texto no entraba en una
+   * pantalla de teléfono: se salía del recuadro y dejaba TODO el sitio
+   * deslizable hacia la derecha, con contenido escondido fuera de la vista.
+   * Un desborde horizontal no avisa —no hay error, no hay nada roto a la
+   * vista—, así que se mide.
+   */
+  test('ninguna pantalla de admin se desborda a lo ancho', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+
+    for (const ancho of [320, 360, 412]) {
+      await page.setViewportSize({ width: ancho, height: 780 })
+
+      for (const ruta of ['/admin/servicios', '/admin/bombas', '/admin/configuracion']) {
+        await page.goto(ruta)
+        await expect(page.getByRole('link', { name: 'Configuración' })).toBeVisible()
+
+        const sobra = await page.evaluate(
+          () => document.body.scrollWidth - document.documentElement.clientWidth,
+        )
+        expect(sobra, `${ruta} a ${ancho}px se desborda ${sobra}px`).toBeLessThanOrEqual(0)
+      }
+    }
+  })
+
+  test('la configuración es un ícono con nombre, fuera del recuadro', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/admin/servicios')
+
+    // Es un ícono, así que el nombre accesible es lo único que lo anuncia:
+    // sin él un lector de pantalla diría «enlace» y nada más.
+    const engranaje = page.getByRole('link', { name: 'Configuración' })
+    await expect(engranaje).toBeVisible()
+    await expect(engranaje).toHaveText('')
+
+    // Y está afuera del recuadro que agrupa a los dos catálogos.
+    const adentro = await engranaje.evaluate((el) => Boolean(el.closest('nav')))
+    expect(adentro, 'el engranaje no va adentro del recuadro de catálogos').toBe(false)
+
+    await engranaje.click()
+    await expect(page.getByRole('heading', { name: 'Configuración' })).toBeVisible()
+    await expect(engranaje).toHaveAttribute('aria-current', 'page')
+  })
+})

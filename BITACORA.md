@@ -53,7 +53,7 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 tsc          0 errores
 eslint       0 errores
 vitest       122 tests
-playwright   244 tests e2e (contra Supabase real, 2 viewports)
+playwright   248 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -703,7 +703,14 @@ Tabla `AppSetting` en clave/valor, y no variables de entorno: los cambia el
 administrador desde la app, no quien deploya. Una variable exigiría redeployar
 para algo que es una preferencia de uso.
 
-El primero es el **criterio de numeración de los pozos** (`/admin/configuracion`):
+Vive en `/admin/configuracion`, a la que se llega por el **engranaje** que está
+al lado de las pestañas de catálogos, fuera del recuadro. Como tercera pestaña
+no entraba en una pantalla de teléfono: se salía del recuadro y dejaba todo el
+sitio deslizable a lo ancho, con contenido escondido. Un desborde horizontal no
+avisa —no hay error ni nada visiblemente roto—, así que hay un test que lo mide
+a 320, 360 y 412 px.
+
+El primero es el **criterio de numeración de los pozos**:
 por orden de carga —el que siempre tiene dato— o por fecha de perforación real,
 donde los pozos sin fecha van al final para no correr la numeración de los que
 sí la tienen.
