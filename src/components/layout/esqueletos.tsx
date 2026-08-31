@@ -41,16 +41,27 @@ export function EsqueletoLista({ filas = 4 }: { filas?: number }) {
   )
 }
 
-/** El panel de tres datos del inicio. */
+/**
+ * El panel del inicio: tres conteos arriba y el monto a lo ancho abajo.
+ *
+ * Sigue la forma real del panel. Un esqueleto con otra silueta hace saltar el
+ * contenido cuando llega, que es justo lo que el esqueleto viene a evitar.
+ */
 export function EsqueletoPanel() {
   return (
-    <div aria-hidden className="grid grid-cols-3 divide-x rounded-md border">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="space-y-2 px-3 py-3">
-          <Skeleton className="h-2.5 w-14" />
-          <Skeleton className="h-7 w-12" />
-        </div>
-      ))}
+    <div aria-hidden className="divide-y overflow-hidden rounded-md border">
+      <div className="grid grid-cols-3 divide-x">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="space-y-2 px-3 py-3">
+            <Skeleton className="h-2.5 w-14" />
+            <Skeleton className="h-7 w-12" />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <Skeleton className="h-2.5 w-16" />
+        <Skeleton className="h-6 w-32" />
+      </div>
     </div>
   )
 }

@@ -8,9 +8,10 @@ import { cn } from '@/lib/utils'
 const TABS = [
   { href: '/admin/servicios', label: 'Servicios' },
   { href: '/admin/bombas', label: 'Electrobombas' },
+  { href: '/admin/configuracion', label: 'Configuración' },
 ] as const
 
-/** Navegación entre los dos catálogos. Cliente, porque marca el activo. */
+/** Navegación de la zona de administración. Cliente, porque marca el activo. */
 export function CatalogoTabs() {
   const pathname = usePathname()
 

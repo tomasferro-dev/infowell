@@ -237,10 +237,11 @@ export function Mapa({
         'aria-label',
         punto.tipo === 'finca' ? `Finca ${punto.nombre}` : `Pozo ${punto.nombre}`,
       )
-      el.innerHTML =
-        punto.tipo === 'finca'
-          ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21V9l9-6 9 6v12h-6v-7H9v7z"/></svg>'
-          : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2s6 7.2 6 11.4A6 6 0 0 1 6 13.4C6 9.2 12 2 12 2z"/></svg>'
+      // El rótulo va como texto y no como ícono: diez gotas idénticas sobre
+      // una imagen satelital obligan a tocarlas de a una para saber cuál es
+      // cuál. textContent y no innerHTML — el nombre de la finca lo escribe
+      // un usuario y termina acá adentro.
+      el.textContent = punto.etiqueta
 
       el.addEventListener('click', (evento) => {
         // Sin esto el click llega al mapa y cierra la ficha recién abierta.

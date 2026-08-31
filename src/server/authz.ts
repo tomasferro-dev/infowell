@@ -27,6 +27,7 @@ export type Resource =
   | 'observation'
   | 'receipt'
   | 'catalog' // ServiceType y Pump: globales, no pertenecen a una finca
+  | 'setting' // ajustes de la app: globales, los cambia solo el admin
   | 'user' // gestión de usuarios y membresías
 
 /** Recursos que SIEMPRE pertenecen a una finca y exigen scope. */

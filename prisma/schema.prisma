@@ -54,6 +54,7 @@ model User {
   // Trazabilidad de la carga
   interventionsCreated Intervention[]      @relation("InterventionAuthor")
   readingsCreated      WellStatusReading[] @relation("ReadingAuthor")
+  settingsUpdated      AppSetting[]        @relation("SettingEditor")
   observationsCreated  Observation[]       @relation("ObservationAuthor")
   receiptsCreated      Receipt[]           @relation("ReceiptAuthor")
 
@@ -375,4 +376,18 @@ model ReceiptPhoto {
   createdAt DateTime @default(now())
 
   @@index([receiptId])
+}
+
+/// Ajustes de la aplicación, en clave/valor.
+///
+/// Una tabla y no variables de entorno porque los cambia el administrador
+/// desde la app, no quien deploya: una variable de entorno exigiría redeployar
+/// para algo que es una preferencia de uso.
+model AppSetting {
+  key   String @id
+  value String
+
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("SettingEditor", fields: [updatedById], references: [id])
 }

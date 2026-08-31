@@ -27,50 +27,54 @@ export async function datosDelInicio() {
   const porFinca = farmIds === null ? {} : { farmId: { in: farmIds } }
   const fincaPropia = farmIds === null ? {} : { id: { in: farmIds } }
 
-  const [fincas, remitos, montoTotal, ultimasIntervenciones, ultimosRemitos] = await Promise.all([
-    prisma.farm.count({ where: { ...fincaPropia, deletedAt: null } }),
+  const [fincas, pozos, remitos, montoTotal, ultimasIntervenciones, ultimosRemitos] =
+    await Promise.all([
+      prisma.farm.count({ where: { ...fincaPropia, deletedAt: null } }),
 
-    prisma.receipt.count({ where: { ...porFinca, deletedAt: null } }),
+      prisma.well.count({ where: { ...porFinca, deletedAt: null } }),
 
-    prisma.receipt.aggregate({
-      where: { ...porFinca, deletedAt: null },
-      _sum: { amount: true },
-    }),
+      prisma.receipt.count({ where: { ...porFinca, deletedAt: null } }),
 
-    prisma.intervention.findMany({
-      where: {
-        deletedAt: null,
-        well: { deletedAt: null, ...(farmIds === null ? {} : { farmId: { in: farmIds } }) },
-      },
-      orderBy: [{ performedAt: 'desc' }, { createdAt: 'desc' }],
-      take: 5,
-      select: {
-        id: true,
-        performedAt: true,
-        well: {
-          select: { id: true, name: true, farm: { select: { id: true, name: true } } },
+      prisma.receipt.aggregate({
+        where: { ...porFinca, deletedAt: null },
+        _sum: { amount: true },
+      }),
+
+      prisma.intervention.findMany({
+        where: {
+          deletedAt: null,
+          well: { deletedAt: null, ...(farmIds === null ? {} : { farmId: { in: farmIds } }) },
         },
-        services: { select: { serviceType: { select: { id: true, name: true } } } },
-      },
-    }),
+        orderBy: [{ performedAt: 'desc' }, { createdAt: 'desc' }],
+        take: 5,
+        select: {
+          id: true,
+          performedAt: true,
+          well: {
+            select: { id: true, name: true, farm: { select: { id: true, name: true } } },
+          },
+          services: { select: { serviceType: { select: { id: true, name: true } } } },
+        },
+      }),
 
-    prisma.receipt.findMany({
-      where: { ...porFinca, deletedAt: null },
-      orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
-      take: 5,
-      select: {
-        id: true,
-        issueDate: true,
-        amount: true,
-        currency: true,
-        farm: { select: { id: true, name: true } },
-      },
-    }),
-  ])
+      prisma.receipt.findMany({
+        where: { ...porFinca, deletedAt: null },
+        orderBy: [{ issueDate: 'desc' }, { createdAt: 'desc' }],
+        take: 5,
+        select: {
+          id: true,
+          issueDate: true,
+          amount: true,
+          currency: true,
+          farm: { select: { id: true, name: true } },
+        },
+      }),
+    ])
 
   return {
     rol: actor.role,
     fincas,
+    pozos,
     remitos,
     // Decimal no cruza a Client Components: se convierte acá.
     montoTotal: Number(montoTotal._sum.amount ?? 0),

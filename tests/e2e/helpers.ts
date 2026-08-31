@@ -24,7 +24,7 @@ export type DatosTest = {
 }
 
 function correrRunner(
-  comando: 'setup' | 'teardown' | 'teardown-catalogo' | 'notas-de-voz',
+  comando: 'setup' | 'teardown' | 'teardown-catalogo' | 'notas-de-voz' | 'reset-ajustes',
   marcaCorrida: string,
 ) {
   const salida = execFileSync('npx', ['tsx', RUNNER, comando, marcaCorrida], {
@@ -51,6 +51,11 @@ export function sembrarNotasDeVoz(marcaCorrida: string): { wellId: string; farmI
   return correrRunner('notas-de-voz', marcaCorrida)
 }
 
+/** Devuelve la numeración de pozos a su valor por defecto. Ver fixture-runner. */
+export function resetAjustes() {
+  correrRunner('reset-ajustes', 'sin-marca')
+}
+
 /** Borra los items de catálogo creados por los tests que nadie referencia. */
 export function limpiarCatalogo(marcaCorrida: string) {
   correrRunner('teardown-catalogo', marcaCorrida)
@@ -71,6 +76,24 @@ export async function escribir(locator: Locator, texto: string) {
   await expect(async () => {
     await locator.fill(texto)
     await expect(locator).toHaveValue(texto, { timeout: 1000 })
+  }).toPass({ timeout: 15_000 })
+}
+
+/**
+ * Toca algo y espera a que el efecto ocurra, reintentando.
+ *
+ * Mismo problema que `escribir`, del otro lado: Playwright puede tocar un
+ * botón ANTES de que React hidrate, y ese primer toque no hace nada — sin
+ * error y sin aviso. El botón ya está en el HTML del servidor, así que la
+ * comprobación de "clickeable" de Playwright pasa igual.
+ *
+ * ⚠️ Solo para acciones IDEMPOTENTES: reintenta el click, así que elegir una
+ * opción sirve y alternar un interruptor no.
+ */
+export async function elegir(locator: Locator, comprobar: () => Promise<unknown>) {
+  await expect(async () => {
+    await locator.click()
+    await comprobar()
   }).toPass({ timeout: 15_000 })
 }
 

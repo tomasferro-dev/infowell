@@ -203,6 +203,18 @@ async function teardownCatalogo(marca: string) {
   return { ok: true }
 }
 
+/**
+ * Devuelve la numeración de pozos a su valor por defecto.
+ *
+ * El ajuste es GLOBAL y esta base es la misma que usa la app publicada: un
+ * test que lo cambie y muera a la mitad se lo dejaría cambiado a la empresa.
+ * Por eso el reset corre en afterAll y no depende de que el test termine bien.
+ */
+async function resetAjustes() {
+  await prisma.appSetting.deleteMany({ where: { key: 'numeracion_pozos' } })
+  return { ok: true }
+}
+
 async function main() {
   const [comando, marca] = process.argv.slice(2)
 
@@ -215,7 +227,9 @@ async function main() {
         ? await teardownCatalogo(marca)
         : comando === 'notas-de-voz'
           ? await notasDeVoz(marca)
-          : await teardown(marca)
+          : comando === 'reset-ajustes'
+            ? await resetAjustes()
+            : await teardown(marca)
 
   // El spec lee esto por stdout.
   console.log(JSON.stringify(resultado))

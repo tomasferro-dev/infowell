@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
-import { FichaMapa, TOPES } from '@/components/mapa/ficha-mapa'
+import { FichaMapa, TOPES, TOPE_QUE_SIGUE_EL_MAPA } from '@/components/mapa/ficha-mapa'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { MarcadorMapa } from '@/server/queries/farms'
 
@@ -99,7 +99,11 @@ export function VistaMapa({
         seleccionado={seleccionado}
         onSeleccion={setSeleccionado}
         irAMiUbicacion={puntoInicial === undefined}
-        altoFicha={seleccionado && typeof tope === 'number' ? tope : 0}
+        altoFicha={
+          seleccionado && typeof tope === 'number'
+            ? Math.min(tope, TOPE_QUE_SIGUE_EL_MAPA)
+            : 0
+        }
         colocando={colocando}
         onCancelarColocacion={() => setColocando(undefined)}
         onColocar={(lat, lon) => {

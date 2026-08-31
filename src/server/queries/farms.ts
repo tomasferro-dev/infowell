@@ -1,7 +1,9 @@
 import 'server-only'
 
 import type { Prisma } from '@/generated/prisma/client'
+import { inicialesDeFinca, numerarPozos } from '@/lib/etiquetas-mapa'
 import { prisma } from '@/server/db'
+import { criterioDeNumeracion } from '@/server/queries/ajustes'
 import { requireAccess, requireActor } from '@/server/guards'
 
 /**
@@ -121,7 +123,7 @@ export async function fincasParaSelector() {
  * pero se cuentan: el mapa avisa cuántos faltan en vez de mentir por omisión.
  */
 export async function puntosDelMapa() {
-  const scope = await scopeDeFincas()
+  const [scope, criterio] = await Promise.all([scopeDeFincas(), criterioDeNumeracion()])
 
   const fincas = await prisma.farm.findMany({
     where: { ...scope, deletedAt: null },
@@ -141,6 +143,10 @@ export async function puntosDelMapa() {
           code: true,
           latitude: true,
           longitude: true,
+          // Para numerarlos: la fecha de carga siempre está, la de
+          // perforación puede faltar.
+          createdAt: true,
+          drilledAt: true,
           _count: { select: { interventions: { where: { deletedAt: null } } } },
           // La última medición y la última visita: es lo que se quiere saber
           // al tocar un pozo estando parado en la finca.
@@ -172,6 +178,11 @@ export async function puntosDelMapa() {
   let fincasSinUbicar = 0
 
   const marcadores = fincas.flatMap((finca) => {
+    // Se numeran TODOS los pozos de la finca, incluidos los que no tienen
+    // ubicación. Numerando solo los del mapa, el «2» del mapa podría ser el
+    // tercero de la finca y el número dejaría de coincidir con la realidad.
+    const numeros = numerarPozos(finca.wells, criterio)
+
     const pozos = finca.wells.flatMap((pozo) => {
       if (pozo.latitude === null || pozo.longitude === null) {
         pozosSinUbicar += 1
@@ -188,6 +199,7 @@ export async function puntosDelMapa() {
           nombre: pozo.name,
           detalle: pozo.code,
           nombreFinca: finca.name,
+          etiqueta: String(numeros.get(pozo.id) ?? '?'),
           intervenciones: pozo._count.interventions,
           lat: pozo.latitude.toNumber(),
           lon: pozo.longitude.toNumber(),
@@ -219,6 +231,7 @@ export async function puntosDelMapa() {
         nombre: finca.name,
         detalle: finca.city,
         nombreFinca: finca.name,
+        etiqueta: inicialesDeFinca(finca.name),
         // En la finca el número que importa es cuántos pozos tiene.
         intervenciones: finca.wells.length,
         lat: finca.latitude.toNumber(),

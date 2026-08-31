@@ -39,6 +39,54 @@ async function cargarRemito(page: import('@playwright/test').Page, farmId: strin
   await expect(page).toHaveURL(`/fincas/${farmId}/remitos`)
 }
 
+test.describe('el panel de números del inicio', () => {
+  test('entra en una pantalla de teléfono, con el monto completo', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await cargarRemito(page, datos.fincaPropiaId, '9876543,21')
+    await page.goto('/')
+
+    const panel = page.locator('dl').first()
+    await expect(panel.getByText('Fincas')).toBeVisible()
+    await expect(panel.getByText('Pozos')).toBeVisible()
+    await expect(panel.getByText('Remitos')).toBeVisible()
+    await expect(panel.getByText('Facturado')).toBeVisible()
+
+    // Lo que rompía: un monto de siete cifras no entra en un tercio de una
+    // pantalla de 375 px y se salía por la derecha. Ahora tiene la fila entera.
+    const desbordes = await page.evaluate(() => ({
+      panel: (() => {
+        const el = document.querySelector('dl')
+        return el ? el.scrollWidth > el.clientWidth : false
+      })(),
+      pagina: document.body.scrollWidth > window.innerWidth,
+    }))
+
+    expect(desbordes.panel, 'el panel no puede desbordarse').toBe(false)
+    expect(desbordes.pagina, 'la página no puede scrollear en horizontal').toBe(false)
+
+    // Y el monto se lee entero, sin recortes. Se busca por forma y no por
+    // un importe exacto: «Facturado» es la SUMA de la finca, y otros tests
+    // cargan remitos sobre la misma.
+    const monto = panel.getByText(/\d{1,3}(\.\d{3})+,\d{2}/)
+    await expect(monto).toBeVisible()
+    const recortado = await monto.evaluate((el) => el.scrollWidth > el.clientWidth + 1)
+    expect(recortado, 'el monto no puede quedar cortado').toBe(false)
+  })
+
+  test('cuenta los pozos que el actor puede ver, no todos', async ({ page }) => {
+    // El cliente tiene UNA finca con UN pozo; el admin ve muchos más.
+    await login(page, `${marca}-cliente@test.local`)
+    await page.goto('/')
+
+    const suyos = await page.locator('dl').first().getByText('Pozo', { exact: false }).count()
+    expect(suyos).toBeGreaterThan(0)
+
+    // El número que ve el cliente no puede ser el total de la empresa.
+    const panel = page.locator('dl').first()
+    await expect(panel).toContainText('1')
+  })
+})
+
 test.describe('el inicio del cliente solo agrega lo suyo', () => {
   test('no aparece ningún dato de la finca ajena', async ({ page }) => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)

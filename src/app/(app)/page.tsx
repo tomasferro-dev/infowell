@@ -54,14 +54,21 @@ export default async function InicioPage() {
       {/* Panel compacto en vez de tres tarjetas apiladas: en el celular, tres
           cards altas se comen la pantalla entera antes de llegar al contenido
           que el usuario vino a ver. */}
+      {/* Los tres conteos arriba y el monto a lo ancho abajo, en un solo
+          bloque. El monto no entra en un tercio de una pantalla de 375 px
+          —«$ 11.173.500,00» se desbordaba—, y darle la fila entera lo deja
+          leerse entero sin achicar la tipografía hasta lo ilegible. */}
       {!sinFincas ? (
-        <dl className="bg-card grid grid-cols-3 divide-x rounded-md border">
-          <Dato etiqueta={datos.fincas === 1 ? 'Finca' : 'Fincas'} valor={String(datos.fincas)} />
-          <Dato
-            etiqueta={datos.remitos === 1 ? 'Remito' : 'Remitos'}
-            valor={String(datos.remitos)}
-          />
-          <Dato etiqueta="Facturado" valor={formatearMonto(datos.montoTotal)} ajustado />
+        <dl className="bg-card divide-y overflow-hidden rounded-md border">
+          <div className="grid grid-cols-3 divide-x">
+            <Dato etiqueta={datos.fincas === 1 ? 'Finca' : 'Fincas'} valor={String(datos.fincas)} />
+            <Dato etiqueta={datos.pozos === 1 ? 'Pozo' : 'Pozos'} valor={String(datos.pozos)} />
+            <Dato
+              etiqueta={datos.remitos === 1 ? 'Remito' : 'Remitos'}
+              valor={String(datos.remitos)}
+            />
+          </div>
+          <Dato etiqueta="Facturado" valor={formatearMonto(datos.montoTotal)} ancho />
         </dl>
       ) : null}
 
@@ -159,23 +166,19 @@ export default async function InicioPage() {
 function Dato({
   etiqueta,
   valor,
-  ajustado,
+  ancho,
 }: {
   etiqueta: string
   valor: string
-  /** Para el monto, que es más largo y necesita achicarse en pantallas chicas. */
-  ajustado?: boolean
+  /** El monto ocupa la fila entera: es el dato más largo de los cuatro. */
+  ancho?: boolean
 }) {
   return (
-    <div className="px-3 py-3">
+    <div className={ancho ? 'flex items-baseline justify-between px-3 py-2.5' : 'px-3 py-3'}>
       <dt className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">
         {etiqueta}
       </dt>
-      <dd
-        className={
-          'mt-0.5 font-bold tabular-nums ' + (ajustado ? 'text-sm sm:text-lg' : 'text-2xl')
-        }
-      >
+      <dd className={'font-bold tabular-nums ' + (ancho ? 'text-xl' : 'mt-0.5 text-2xl')}>
         {valor}
       </dd>
     </div>

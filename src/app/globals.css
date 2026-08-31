@@ -241,10 +241,17 @@
     box-shadow 150ms ease;
 }
 
-.marcador-mapa svg {
-  width: 100%;
-  height: 100%;
-  fill: #fff;
+/* El rótulo: dos letras para una finca, el número para un pozo. */
+.marcador-mapa {
+  color: #fff;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  /* Un número de tres cifras no puede deformar el círculo. */
+  overflow: hidden;
 }
 
 .marcador-mapa[data-tipo='finca'] {

@@ -262,6 +262,25 @@ test.describe('elegir el punto en el mapa desde el formulario', () => {
   })
 })
 
+/**
+ * Arrastra la ficha tomándola por el agarre. Negativo la sube.
+ *
+ * Espera a que termine la animación antes de volver: si no, el gesto siguiente
+ * mide el agarre mientras se está moviendo, apoya el dedo donde ya no está y
+ * no arrastra nada. El síntoma es una ficha que "no responde" en el test y
+ * responde perfecto a mano.
+ */
+async function arrastrarAgarre(page: import('@playwright/test').Page, px: number) {
+  const agarre = (await page.locator('[data-agarre="true"]').boundingBox())!
+  const x = agarre.x + agarre.width / 2
+  const y = agarre.y + agarre.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x, y + px, { steps: 14 })
+  await page.mouse.up()
+  await page.waitForTimeout(900)
+}
+
 test.describe('la ficha tiene dos alturas', () => {
   /** Cuánta pantalla ocupa la ficha, en porcentaje. */
   async function alturaFicha(page: import('@playwright/test').Page) {
@@ -292,16 +311,44 @@ test.describe('la ficha tiene dos alturas', () => {
     await expect(ficha.getByText('Pozos')).toBeVisible()
     await expect(ficha.getByText('Coordenadas')).toBeVisible()
 
-    // Arrastrando el borde de arriba se sube al tope grande.
-    const caja = (await ficha.boundingBox())!
-    await page.mouse.move(caja.x + caja.width / 2, caja.y + 12)
-    await page.mouse.down()
-    await page.mouse.move(caja.x + caja.width / 2, caja.y - 220, { steps: 14 })
-    await page.mouse.up()
+    // Arrastrando el agarre se sube al tope grande.
+    await arrastrarAgarre(page, -220)
 
     await expect.poll(() => alturaFicha(page)).toBeGreaterThan(50)
-    // Y nunca se come toda la pantalla: el mapa conserva su franja.
     await expect.poll(() => alturaFicha(page)).toBeLessThan(70)
+  })
+
+  test('se puede subir del todo para leer, sin salir del mapa', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+
+    await page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`).click()
+    const ficha = page.locator('[data-vaul-drawer]')
+    await expect(ficha).toBeVisible()
+
+    // Se arrastra desde el agarre, tomándolo por su centro: apuntar a un
+    // desplazamiento en píxeles desde el borde de la ficha depende del alto de
+    // la pantalla, y falla en un viewport y en otro no.
+    const arrastrar = (px: number) => arrastrarAgarre(page, px)
+    const subir = (px: number) => arrastrar(-px)
+
+    await subir(220)
+    await expect.poll(() => alturaFicha(page)).toBeGreaterThan(50)
+
+    // Y de ahí, otro tirón la sube del todo.
+    await subir(300)
+    await expect.poll(() => alturaFicha(page)).toBeGreaterThan(85)
+
+    // Tapa el mapa pero NO sale de él: la ruta sigue siendo la misma y el
+    // mapa está ahí atrás, con el punto todavía seleccionado.
+    await expect(page).toHaveURL(/\/mapa/)
+    await expect(page.locator('.marcador-mapa[data-activo="true"]')).toHaveCount(1)
+
+    // Y se baja de nuevo, dejando todo como estaba.
+    await arrastrar(320)
+    await expect.poll(() => alturaFicha(page)).toBeLessThan(70)
+    await expect(ficha).toBeVisible()
   })
 
   test('el encuadre acompaña: el punto no queda tapado en ningún tope', async ({ page }) => {
@@ -323,16 +370,50 @@ test.describe('la ficha tiene dos alturas', () => {
 
     await expect.poll(tapado).toBe(false)
 
-    const caja = (await ficha.boundingBox())!
-    await page.mouse.move(caja.x + caja.width / 2, caja.y + 12)
-    await page.mouse.down()
-    await page.mouse.move(caja.x + caja.width / 2, caja.y - 220, { steps: 14 })
-    await page.mouse.up()
+    await arrastrarAgarre(page, -220)
 
     // Al subir la ficha el mapa tiene que correrse, o el punto que se está
     // mirando desaparece detrás de ella.
     await expect(page.locator('[data-alto-ficha="0.6"]')).toBeVisible()
     await expect.poll(tapado).toBe(false)
+  })
+})
+
+test.describe('cada punto se identifica solo', () => {
+  test('la finca lleva dos letras de su nombre y el pozo su número', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+
+    // Sin rótulo, diez pines iguales sobre una imagen satelital obligan a
+    // tocarlos de a uno para saber cuál es cuál.
+    const finca = page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`)
+    await expect(finca).toHaveText(/^[A-Z0-9]{2}$/)
+
+    const pozo = page.locator(`.marcador-mapa[data-id="${datos.pozoPropioId}"]`)
+    await expect(pozo).toBeVisible()
+    await expect(pozo).toHaveText(/^\d+$/)
+
+    // El rótulo es texto de verdad: un lector de pantalla igual anuncia el
+    // nombre completo, que es lo que sirve para quien no ve el mapa.
+    await expect(finca).toHaveAttribute('aria-label', /Finca /)
+    await expect(pozo).toHaveAttribute('aria-label', /Pozo /)
+  })
+
+  test('ningún pozo del mapa se queda sin número', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/mapa')
+    await esperarMapa(page)
+    await page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`).click()
+
+    const rotulos = await page
+      .locator('.marcador-mapa[data-tipo="pozo"]')
+      .allTextContents()
+
+    expect(rotulos.length).toBeGreaterThan(0)
+    for (const r of rotulos) {
+      expect(r, 'un pozo sin número no se puede nombrar en voz alta').toMatch(/^\d+$/)
+    }
   })
 })
 

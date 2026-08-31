@@ -52,8 +52,8 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 ```
 tsc          0 errores
 eslint       0 errores
-vitest       110 tests
-playwright   228 tests e2e (contra Supabase real, 2 viewports)
+vitest       122 tests
+playwright   244 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -434,6 +434,7 @@ puede tener memorizado.
 | Pendiente | Nota |
 |---|---|
 | **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
+| **Numeración visible fuera del mapa** | Hoy el número del pozo se ve solo en el mapa. En la ficha del pozo y en el listado de la finca todavía no. |
 | **Cargar coordenadas de las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos demo ya vienen ubicados; las fincas reales hay que salir a marcarlas. |
 | **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md — sin eso la clave sirve desde cualquier sitio. |
 
@@ -677,6 +678,42 @@ edición —al editar es cuando más se necesita, para corregir uno mal ubicado�
 se lleva lo que el usuario ya escribió, devolviéndolo intacto. Sin eso, ir al
 mapa desde un formulario a medio llenar lo borraría y nadie usaría el botón una
 segunda vez.
+
+### Cada punto se identifica solo
+
+Las fincas llevan **dos letras** de su nombre y los pozos su **número** dentro
+de la finca. Sin rótulo, diez pines idénticos sobre una imagen satelital
+obligan a tocarlos de a uno para saber cuál es cuál.
+
+Las iniciales saltean conectores («de», «la», «san», «srl»), así «Finca de los
+Andes» da FA y no FD. Con una sola palabra usa sus dos primeras letras. Las
+tildes se quitan: el rótulo tiene que entrar en el pin.
+
+Los pozos se numeran **por finca** —cada una empieza de nuevo en 1— y se
+numeran TODOS, incluidos los que no tienen ubicación. Numerando solo los del
+mapa, el «2» del mapa podría ser el tercero de la finca y el número dejaría de
+coincidir con la realidad.
+
+El rótulo se pinta con `textContent`, nunca con `innerHTML`: el nombre de la
+finca lo escribe un usuario y termina adentro de ese elemento.
+
+### Ajustes de la aplicación
+
+Tabla `AppSetting` en clave/valor, y no variables de entorno: los cambia el
+administrador desde la app, no quien deploya. Una variable exigiría redeployar
+para algo que es una preferencia de uso.
+
+El primero es el **criterio de numeración de los pozos** (`/admin/configuracion`):
+por orden de carga —el que siempre tiene dato— o por fecha de perforación real,
+donde los pozos sin fecha van al final para no correr la numeración de los que
+sí la tienen.
+
+⚠️ **Un ajuste global no se puede testear en paralelo.** Es UNA fila para toda
+la app: dos tests tocándola a la vez se pisan y el segundo lee lo que escribió
+el primero. Los tests que lo escriben corren en serie y en un solo proyecto, y
+el reset va en `afterAll` —fuera del test— para que corra aunque el test se
+caiga a la mitad. Esta base es la misma que usa la app publicada: un ajuste que
+quede cambiado se lo queda cambiado la empresa.
 
 ### Seguridad
 

@@ -16,9 +16,10 @@ import type { MarcadorMapa } from '@/server/queries/farms'
  * mapa TIENE que seguir visible y usable con la ficha abierta — es el punto
  * del feature.
  *
- * Dos topes de arrastre: abre mostrando lo esencial —nombre y primeras filas
- * de datos— y se sube para ver el resto. Nunca pasa del 60%, así el mapa
- * conserva el 40% de arriba y el punto que se está mirando no queda tapado.
+ * Tres topes de arrastre: abre mostrando lo esencial —nombre y primeras filas
+ * de datos—, sube al 60% dejando ver el mapa, y sube del todo para leer sin
+ * distracciones. En el tope alto tapa el mapa pero NO sale de él: se baja de
+ * nuevo y todo queda como estaba, sin perder el punto ni la vista.
  *
  * OJO con el alto del contenido. vaul mueve la ficha con
  * `translate3d(0, ventana − tope × ventana)`, cuenta que asume que el elemento
@@ -29,7 +30,16 @@ import type { MarcadorMapa } from '@/server/queries/farms'
  */
 
 /** Fracciones de pantalla. El mayor manda el alto del bloque de contenido. */
-export const TOPES = [0.34, 0.6]
+export const TOPES = [0.34, 0.6, 0.96]
+
+/**
+ * Más arriba de esto, el encuadre del mapa deja de acompañar.
+ *
+ * Con la ficha casi tapando todo, descontar su alto dejaría al mapa tratando
+ * de meter el punto en una banda de cuatro por ciento: un salto brusco para
+ * dejarlo donde igual no se ve. Al subir a leer, el mapa se queda quieto.
+ */
+export const TOPE_QUE_SIGUE_EL_MAPA = 0.6
 
 export function FichaMapa({
   marcador,
@@ -72,9 +82,13 @@ export function FichaMapa({
         >
           {/* El alto es el del tope mayor, no el del contenedor: es lo que
               llega a verse, y todo lo que quede debajo sería espacio muerto. */}
-          <div className="flex h-[60vh] flex-col">
-          {/* El agarre: la zona ancha de arrastre del borde superior. */}
-          <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-muted-foreground/30" />
+          <div className="flex h-[96vh] flex-col">
+          {/* El agarre: la zona ancha de arrastre del borde superior. La
+              barrita se ve chica, pero el área que la rodea también arrastra —
+              apuntarle a seis píxeles con el pulgar no es razonable. */}
+          <div data-agarre="true" className="shrink-0 px-4 pt-2 pb-1.5">
+            <div className="bg-muted-foreground/30 mx-auto h-1.5 w-12 rounded-full" />
+          </div>
 
           {marcador ? (
             <>
