@@ -1,12 +1,66 @@
 'use client'
 
-import { Building2, Droplet, MapPin, Plus, SquareArrowOutUpRight } from 'lucide-react'
+import {
+  Building2,
+  Droplet,
+  MapPin,
+  Minus,
+  Pentagon,
+  Plus,
+  Square,
+  SquareArrowOutUpRight,
+} from 'lucide-react'
 import Link from 'next/link'
 import { Drawer } from 'vaul'
 
 import { IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { Button } from '@/components/ui/button'
+import type { Forma } from '@/lib/anotaciones'
 import type { MarcadorMapa } from '@/server/queries/farms'
+
+/**
+ * Las cuatro maneras de dibujar.
+ *
+ * El rectángulo no es una forma propia —se guarda como perímetro—, pero sí una
+ * herramienta propia: dos toques en vez de recorrer el contorno. Es la
+ * diferencia entre marcar una finca en cinco segundos y no marcarla nunca.
+ */
+const HERRAMIENTAS: {
+  forma: Forma
+  rectangulo: boolean
+  icono: React.ComponentType<{ className?: string }>
+  titulo: string
+  detalle: string
+}[] = [
+  {
+    forma: 'PUNTO',
+    rectangulo: false,
+    icono: MapPin,
+    titulo: 'Referencia',
+    detalle: 'Una entrada, una tranquera, un cruce',
+  },
+  {
+    forma: 'LINEA',
+    rectangulo: false,
+    icono: Minus,
+    titulo: 'Línea',
+    detalle: 'Un callejón, un canal, una división rápida',
+  },
+  {
+    forma: 'POLIGONO',
+    rectangulo: true,
+    icono: Square,
+    titulo: 'Rectángulo',
+    detalle: 'La finca a grandes rasgos, en dos toques',
+  },
+  {
+    forma: 'POLIGONO',
+    rectangulo: false,
+    icono: Pentagon,
+    titulo: 'Perímetro',
+    detalle: 'El contorno real, punto por punto',
+  },
+]
 
 /**
  * La ficha que sube desde abajo al tocar un punto del mapa.
@@ -45,6 +99,7 @@ export function FichaMapa({
   marcador,
   onCerrar,
   onColocarPozo,
+  onDibujar,
   tope,
   onTope,
 }: {
@@ -58,6 +113,7 @@ export function FichaMapa({
     lon: number
     nombreFinca: string
   }) => void
+  onDibujar: (finca: { farmId: string }, forma: Forma, rectangulo: boolean) => void
 }) {
   const esFinca = marcador?.tipo === 'finca'
 
@@ -216,6 +272,36 @@ export function FichaMapa({
                     </>
                   )}
                 </div>
+
+                {/* Dibujar sobre el mapa. Va en la ficha de la finca porque
+                    todo dibujo pertenece a una: es «cómo se llega a acá» y
+                    «hasta dónde llega esto». */}
+                {esFinca && marcador.puedeDibujar ? (
+                  <section className="mt-5">
+                    <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
+                      Dibujar en el mapa
+                    </h3>
+                    <p className="text-muted-foreground mb-3 text-xs">
+                      Lo que el mapa no trae: el callejón que no figura, el límite con el
+                      vecino, la tranquera buena.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {HERRAMIENTAS.map((h) => (
+                        <button
+                          key={h.titulo}
+                          type="button"
+                          onClick={() => onDibujar({ farmId: marcador.farmId }, h.forma, h.rectangulo)}
+                          className="hover:bg-accent focus-visible:ring-ring flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors focus-visible:ring-3 focus-visible:outline-none"
+                        >
+                          <h.icono className="text-muted-foreground size-4" />
+                          <span className="text-sm font-medium">{h.titulo}</span>
+                          <span className="text-muted-foreground text-xs">{h.detalle}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
 
                 <p className="text-muted-foreground mt-4 flex items-start gap-1.5 text-xs">
                   <MapPin className="mt-0.5 size-3.5 shrink-0" />

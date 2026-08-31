@@ -2,12 +2,31 @@
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import { Check, Crosshair, X } from 'lucide-react'
+import { Check, Crosshair, Eye, EyeOff, Undo2, X } from 'lucide-react'
 import * as maplibregl from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 
+import {
+  actualizarFuente,
+  aGeoJson,
+  elevarCapas,
+  borradorAGeoJson,
+  FUENTE,
+  FUENTE_BORRADOR,
+  montarCapas,
+  mostrarDibujos,
+} from '@/components/mapa/capas-dibujo'
 import { Button } from '@/components/ui/button'
-import type { MarcadorMapa } from '@/server/queries/farms'
+import { MINIMO_DE_PUNTOS, NOMBRE_DE_FORMA, rectangulo, type Punto } from '@/lib/anotaciones'
+import type { AnotacionMapa, MarcadorMapa } from '@/server/queries/farms'
+
+/** Lo que se está dibujando ahora mismo. */
+export type Dibujando = {
+  forma: AnotacionMapa['forma']
+  /** El rectángulo se guarda como perímetro; cambia cómo se dibuja. */
+  rectangulo: boolean
+  puntos: Punto[]
+}
 
 /**
  * El mapa satelital.
@@ -23,6 +42,63 @@ import type { MarcadorMapa } from '@/server/queries/farms'
  */
 
 const CLAVE = process.env.NEXT_PUBLIC_MAPTILER_KEY
+
+/**
+ * Dónde está el worker de MapLibre.
+ *
+ * Sin esto, el mapa se ve pero NADA vectorial funciona: ni un relleno, ni una
+ * línea, ni un rótulo, ni una tesela vectorial, ni una tipografía. El raster
+ * sigue andando porque no pasa por el worker, así que la imagen satelital se
+ * dibuja igual y parece que está todo bien. No hay error, no hay aviso: las
+ * capas existen, tienen datos, están arriba de todo y visibles, y no se ven.
+ *
+ * La causa es que maplibre-gl v6 crea el worker como módulo con una URL
+ * relativa a su propio archivo, y esa URL no sobrevive al empaquetado. Se le
+ * dice dónde está usando `new URL(..., import.meta.url)`, que es la forma que
+ * el bundler sí reconoce y reescribe.
+ */
+if (typeof window !== 'undefined') {
+  // El archivo lo pone scripts/preparar-worker-mapa.mjs, que corre en el build
+  // y en postinstall copiándolo del paquete instalado. Referenciarlo desde
+  // node_modules —con `new URL(..., import.meta.url)` o similar— no funciona:
+  // el bundler no reescribe esa ruta.
+  maplibregl.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs')
+}
+
+/**
+ * El estilo se arma acá en vez de pedirle el suyo a MapTiler.
+ *
+ * Los estilos que sirve MapTiler traen, además del raster satelital, una fuente
+ * vectorial con calles y rótulos. Esa parte NUNCA terminaba de cargar —ni una
+ * tesela vectorial pedida, ni un error—, y con el estilo a medio cargar
+ * MapLibre no dibuja ninguna capa agregada después: los dibujos existían, con
+ * sus datos, encima de todo y visibles, y no se veía nada. Tampoco se disparaba
+ * `load`, que fue el primer síntoma de esto y que en su momento se esquivó sin
+ * llegar a la causa.
+ *
+ * Un estilo propio con una sola fuente no tiene nada que quedarse a medias. Se
+ * pierden los rótulos de calles del mapa base, que en el campo casi no existen;
+ * lo que sí hay son los que carga el usuario, y esos ahora se ven.
+ */
+function estiloSatelital(clave: string): maplibregl.StyleSpecification {
+  return {
+    version: 8,
+    // Las etiquetas de los dibujos son capas de símbolos y necesitan glifos.
+    glyphs: `https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key=${clave}`,
+    sources: {
+      satelital: {
+        type: 'raster',
+        tiles: [`https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=${clave}`],
+        tileSize: 512,
+        maxzoom: 20,
+        // La atribución es obligatoria por licencia, no decorativa.
+        attribution:
+          '<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a>',
+      },
+    },
+    layers: [{ id: 'satelital', type: 'raster', source: 'satelital' }],
+  }
+}
 
 /** Mendoza capital: el encuadre de respaldo cuando no hay nada que mostrar. */
 const CENTRO_POR_DEFECTO: [number, number] = [-68.8458, -32.8895]
@@ -102,12 +178,19 @@ export function Mapa({
   onCancelarColocacion,
   irAMiUbicacion = true,
   altoFicha = 0,
+  anotaciones,
+  verAnotaciones,
+  onVerAnotaciones,
+  dibujando,
+  onPuntos,
+  onTerminarDibujo,
+  onCancelarDibujo,
 }: {
   marcadores: MarcadorMapa[]
   seleccionado?: MarcadorMapa
   onSeleccion: (marcador: MarcadorMapa | undefined) => void
   /** Punto desde donde arranca la colocación, o undefined si no está activa. */
-  colocando?: { lat: number; lon: number; nombreFinca: string; sinPunto?: boolean }
+  colocando?: { lat: number; lon: number; quePunto: string; sinPunto?: boolean }
   onColocar: (lat: number, lon: number) => void
   onCancelarColocacion: () => void
   /**
@@ -121,20 +204,36 @@ export function Mapa({
   irAMiUbicacion?: boolean
   /** Fracción de pantalla que tapa la ficha, para descontarla del encuadre. */
   altoFicha?: number
+  anotaciones: AnotacionMapa[]
+  verAnotaciones: boolean
+  onVerAnotaciones: (ver: boolean) => void
+  dibujando?: Dibujando
+  onPuntos: (puntos: Punto[]) => void
+  onTerminarDibujo: () => void
+  onCancelarDibujo: () => void
 }) {
   const contenedor = useRef<HTMLDivElement>(null)
 
   // El mapa vive en estado y no en un ref: los efectos que le cuelgan cosas
   // necesitan volver a correr cuando se recrea. Con un ref no se enterarían.
   const [mapa, setMapa] = useState<maplibregl.Map>()
+  // Las capas de dibujo existen recién cuando el estilo terminó de cargar.
+  const [capasListas, setCapasListas] = useState(false)
 
   // onSeleccion se guarda en un ref: si entrara como dependencia del efecto,
   // cada render del padre destruiría y recrearía el mapa entero. La
   // asignación va en su propio efecto porque escribir un ref durante el
   // render deja al compilador de React sin garantías.
   const alSeleccionar = useRef(onSeleccion)
+  const alDibujar = useRef(onPuntos)
+  const dibujoActual = useRef(dibujando)
+  // Los dibujos, para poder reponerlos si el estilo se recarga.
+  const anotacionesActuales = useRef(anotaciones)
   useEffect(() => {
     alSeleccionar.current = onSeleccion
+    alDibujar.current = onPuntos
+    dibujoActual.current = dibujando
+    anotacionesActuales.current = anotaciones
   })
 
   useEffect(() => {
@@ -144,9 +243,7 @@ export function Mapa({
 
     const m = new maplibregl.Map({
       container: contenedor.current,
-      // Híbrido y no satélite pelado: los nombres de ruta y de paraje son lo
-      // que permite ubicarse en el campo, donde no hay otra referencia.
-      style: `https://api.maptiler.com/maps/hybrid/style.json?key=${CLAVE}`,
+      style: estiloSatelital(CLAVE),
       center: guardada ? [guardada.lon, guardada.lat] : CENTRO_POR_DEFECTO,
       zoom: guardada?.zoom ?? 8,
       bearing: guardada?.bearing ?? 0,
@@ -176,17 +273,83 @@ export function Mapa({
     const reloj =
       irAMiUbicacion && !guardada ? setTimeout(() => ubicacion.trigger(), 300) : undefined
 
-    // Tocar la imagen (no un marcador) cierra la ficha abierta.
-    m.on('click', () => alSeleccionar.current(undefined))
+    // Tocar la imagen (no un marcador) cierra la ficha abierta — salvo
+    // mientras se dibuja, donde cada toque agrega un vértice.
+    m.on('click', (evento) => {
+      const d = dibujoActual.current
+      if (!d) {
+        alSeleccionar.current(undefined)
+        return
+      }
+
+      const nuevo: Punto = [evento.lngLat.lng, evento.lngLat.lat]
+
+      if (d.rectangulo) {
+        // Dos toques y listo: es lo que lo hace rápido para marcar una finca
+        // a grandes rasgos. El segundo cierra la figura.
+        const puntos = d.puntos.length === 0 ? [nuevo] : rectangulo(d.puntos[0]!, nuevo)
+        alDibujar.current(puntos)
+        return
+      }
+
+      alDibujar.current([...d.puntos, nuevo])
+    })
+
+    /*
+     * Las capas de dibujo SÍ dependen del estilo, al revés que los marcadores.
+     *
+     * Los marcadores son elementos del DOM y se pueden colgar apenas existe el
+     * mapa; addSource y addLayer, en cambio, revientan con «Style is not done
+     * loading» si el estilo todavía no llegó. Y no se puede esperar el evento
+     * 'load' —no se dispara cuando React vuelve a montar el componente—, así
+     * que se escucha 'styledata', que llega siempre, y se pregunta.
+     *
+     * Vuelve a correr si el estilo se recarga: ahí las capas se pierden y hay
+     * que volver a colgarlas.
+     */
+    const montar = () => {
+      // No se pregunta isStyleLoaded(): en este mapa nunca da verdadero —la
+      // misma razón por la que 'load' tampoco llega—, y esperarlo dejaba las
+      // capas sin colgar para siempre, en silencio. Se intenta y, si el estilo
+      // todavía no está, se vuelve a intentar en el próximo 'styledata'.
+      try {
+        montarCapas(m)
+      } catch {
+        // Todavía no. El próximo evento reintenta.
+        return
+      }
+
+      // Los datos se reponen SIEMPRE, no solo al crear las capas. 'styledata'
+      // dispara muchas veces, y si el estilo se recarga la fuente vuelve a
+      // nacer vacía: sin esto, los dibujos desaparecían del mapa sin que nada
+      // fallara.
+      // Cada vez, no solo al crearlas: el estilo sigue agregando capas
+      // después y las taparía.
+      elevarCapas(m)
+
+      actualizarFuente(m, FUENTE, aGeoJson(anotacionesActuales.current))
+      setCapasListas(true)
+    }
+
+    m.on('styledata', montar)
+    montar()
 
     const recordar = () => guardarVista(m)
     m.on('moveend', recordar)
     m.on('zoomend', recordar)
 
+    // Handle para los tests: dibujar se verifica mirando las capas del mapa,
+    // y desde afuera no hay otra forma de alcanzarlas.
+    ;(window as unknown as { __mapa?: maplibregl.Map; __mapas?: number }).__mapa = m
+    ;(window as unknown as { __mapas?: number }).__mapas =
+      ((window as unknown as { __mapas?: number }).__mapas ?? 0) + 1
+
     setMapa(m)
 
     return () => {
       if (reloj !== undefined) clearTimeout(reloj)
+      m.off('styledata', montar)
+      setCapasListas(false)
       m.off('moveend', recordar)
       m.off('zoomend', recordar)
       m.remove()
@@ -204,9 +367,22 @@ export function Mapa({
    * concreto, pisarlas sería justamente lo que se quiere evitar.
    */
   const [encuadrar] = useState(() => leerVista() === undefined)
+  // Una sola vez, de verdad. La lista de marcadores cambia de identidad con
+  // cada refresco del servidor —al guardar un dibujo, por ejemplo— y sin esto
+  // el mapa reencuadraba y le tiraba la vista al usuario cada vez.
+  const yaEncuadro = useRef(false)
 
   useEffect(() => {
-    if (!mapa || !encuadrar || seleccionado || marcadores.length === 0) return
+    if (!mapa || yaEncuadro.current) return
+
+    // La bandera se marca ACÁ, antes de decidir si hay algo que encuadrar. El
+    // encuadre inicial es un momento, no una condición: si se entró con un
+    // punto pedido, ese punto ES el encuadre inicial. Marcarla recién después
+    // del fitBounds dejaba la puerta abierta, y al primer refresco del
+    // servidor —guardar un dibujo, por ejemplo— el mapa se iba al mazo.
+    yaEncuadro.current = true
+
+    if (!encuadrar || seleccionado || marcadores.length === 0) return
 
     const limites = marcadores.reduce(
       (acc, p) => acc.extend([p.lon, p.lat]),
@@ -221,6 +397,34 @@ export function Mapa({
     // como dependencias reencuadraría el mapa cada vez que se toca un punto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapa, marcadores])
+
+  /* Los dibujos guardados. */
+  useEffect(() => {
+    if (!mapa || !capasListas) return
+    actualizarFuente(mapa, FUENTE, aGeoJson(anotaciones))
+  }, [mapa, capasListas, anotaciones])
+
+  /* El dibujo en curso, que se redibuja con cada toque. */
+  useEffect(() => {
+    if (!mapa || !capasListas) return
+    actualizarFuente(
+      mapa,
+      FUENTE_BORRADOR,
+      borradorAGeoJson(dibujando?.forma ?? 'LINEA', dibujando?.puntos ?? []),
+    )
+  }, [mapa, capasListas, dibujando])
+
+  /* Apagar los dibujos cuando son demasiados. */
+  useEffect(() => {
+    if (!mapa || !capasListas) return
+    mostrarDibujos(mapa, verAnotaciones)
+  }, [mapa, capasListas, verAnotaciones])
+
+  /* Mientras se dibuja, el cursor lo dice. */
+  useEffect(() => {
+    if (!mapa) return
+    mapa.getCanvas().style.cursor = dibujando ? 'crosshair' : ''
+  }, [mapa, dibujando])
 
   /* Marcadores. Son elementos del DOM que el mapa posiciona, no capas del
      estilo, así que se pueden colgar apenas existe el mapa. */
@@ -244,6 +448,12 @@ export function Mapa({
       el.textContent = punto.etiqueta
 
       el.addEventListener('click', (evento) => {
+        // Mientras se dibuja, un marcador es un lugar más del mapa: el toque
+        // pasa de largo y suma un vértice. Si abriera su ficha, no se podría
+        // dibujar encima de un pozo — que es justo donde uno quiere marcar el
+        // perímetro o la entrada.
+        if (dibujoActual.current) return
+
         // Sin esto el click llega al mapa y cierra la ficha recién abierta.
         evento.stopPropagation()
         alSeleccionar.current(punto)
@@ -368,7 +578,81 @@ export function Mapa({
         // Los tests esperan a que el mapa exista antes de tocar un marcador.
         data-listo={mapa !== undefined}
       data-alto-ficha={altoFicha}
+      data-capas={capasListas}
+      data-anotaciones={anotaciones.length}
       />
+
+      {/* Apagar los dibujos: cuando hay muchos encimados, tapan la imagen y
+          estorban más de lo que ayudan. */}
+      {anotaciones.length > 0 && !dibujando && !colocando ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => onVerAnotaciones(!verAnotaciones)}
+          aria-pressed={!verAnotaciones}
+          className="pointer-events-auto absolute top-3 right-3 z-20 shadow-md"
+        >
+          {verAnotaciones ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+          {verAnotaciones ? 'Dibujos' : 'Ocultos'}
+        </Button>
+      ) : null}
+
+      {dibujando ? (
+        <>
+          <div className="pointer-events-none absolute inset-x-3 top-16 z-20">
+            <p className="bg-card/95 rounded-md border px-3 py-2 text-center text-sm shadow-md backdrop-blur">
+              {dibujando.rectangulo
+                ? dibujando.puntos.length === 0
+                  ? 'Tocá una esquina del rectángulo.'
+                  : 'Tocá la esquina opuesta.'
+                : `Tocá el mapa para marcar ${
+                    dibujando.forma === 'PUNTO' ? 'la referencia' : 'cada punto'
+                  }.`}
+              <span className="text-muted-foreground block text-xs">
+                {NOMBRE_DE_FORMA[dibujando.forma]} · {dibujando.puntos.length}{' '}
+                {dibujando.puntos.length === 1 ? 'punto' : 'puntos'}
+              </span>
+            </p>
+          </div>
+
+          <div
+            data-dibujando="true"
+            className="bg-card/95 pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex gap-2 border-t p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] backdrop-blur"
+          >
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 flex-1"
+              onClick={onCancelarDibujo}
+            >
+              <X className="size-4" />
+              Cancelar
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 shrink-0"
+              disabled={dibujando.puntos.length === 0}
+              aria-label="Deshacer el último punto"
+              onClick={() => onPuntos(dibujando.puntos.slice(0, -1))}
+            >
+              <Undo2 className="size-4" />
+            </Button>
+
+            <Button
+              type="button"
+              className="h-12 flex-1"
+              disabled={dibujando.puntos.length < MINIMO_DE_PUNTOS[dibujando.forma]}
+              onClick={onTerminarDibujo}
+            >
+              <Check className="size-4" />
+              Listo
+            </Button>
+          </div>
+        </>
+      ) : null}
 
       {colocando ? (
         <>
@@ -384,10 +668,7 @@ export function Mapa({
           {/* Debajo del botón «Volver», que vive en la misma esquina. */}
           <div className="pointer-events-none absolute inset-x-3 top-16 z-20">
             <p className="bg-card/95 rounded-md border px-3 py-2 text-center text-sm shadow-md backdrop-blur">
-              Movés el mapa hasta poner la mira sobre el pozo.
-              <span className="text-muted-foreground block text-xs">
-                Se agrega a {colocando.nombreFinca}
-              </span>
+              Movés el mapa hasta poner la mira sobre {colocando.quePunto}.
             </p>
           </div>
 
@@ -417,7 +698,7 @@ export function Mapa({
                 }}
               >
                 <Check className="size-4" />
-                Poner el pozo acá
+                Marcar acá
               </Button>
             </div>
           </div>

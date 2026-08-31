@@ -109,7 +109,16 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
                   href={`/fincas/${farmId}/pozos/${pozo.id}`}
                   className="hover:bg-accent flex items-center gap-3 rounded-lg border p-4 transition-colors"
                 >
-                  <Droplet className="text-primary size-5 shrink-0" />
+                  {/* El mismo número que se ve en el mapa: es como se nombra
+                      el pozo en voz alta, así que tiene que estar en los dos
+                      lados o no sirve para nada. */}
+                  {pozo.numero === null ? (
+                    <Droplet className="text-primary size-5 shrink-0" />
+                  ) : (
+                    <span className="bg-primary/10 text-primary grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold tabular-nums">
+                      {pozo.numero}
+                    </span>
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{pozo.name}</p>
                     {pozo.code ? (

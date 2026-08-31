@@ -52,8 +52,8 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 ```
 tsc          0 errores
 eslint       0 errores
-vitest       122 tests
-playwright   248 tests e2e (contra Supabase real, 2 viewports)
+vitest       150 tests
+playwright   264 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -721,6 +721,60 @@ el primero. Los tests que lo escriben corren en serie y en un solo proyecto, y
 el reset va en `afterAll` —fuera del test— para que corra aunque el test se
 caiga a la mitad. Esta base es la misma que usa la app publicada: un ajuste que
 quede cambiado se lo queda cambiado la empresa.
+
+### Dibujos sobre el mapa
+
+El mapa base no alcanza: el callejón de tierra que lleva a la finca no figura
+en ningún lado y el límite con el vecino no está marcado en el terreno. Eso lo
+sabe quien fue, y solo sirve si lo puede dejar anotado.
+
+Cuatro herramientas, desde la ficha de la finca: **Referencia** (un punto),
+**Línea**, **Rectángulo** (dos toques, la finca a grandes rasgos) y
+**Perímetro** (el contorno real, punto por punto). El rectángulo no es una
+forma propia —se guarda como perímetro—, pero sí una herramienta propia: es la
+diferencia entre marcar una finca en cinco segundos y no marcarla nunca.
+
+Se dibuja tocando el mapa; el nombre se pide DESPUÉS, no antes, porque quien
+está mirando el terreno todavía no sabe qué va a marcar. Los polígonos se
+pueden pintar para reconocerlos de lejos, y todos los dibujos se apagan de una
+cuando estorban.
+
+Cuelgan de una finca y no del mapa en general: es lo que los mete dentro del
+mismo cerco de autorización que todo lo demás. El CLIENTE los ve pero no puede
+hacer ninguno.
+
+⚠️ **maplibre-gl v6 necesita que le digan dónde está su worker.** Lo crea como
+módulo con una URL relativa a su propio archivo, y esa URL no sobrevive al
+empaquetado. Sin worker, el mapa se ve perfecto y NADA vectorial funciona: ni
+un relleno, ni una línea, ni un rótulo, ni una tesela vectorial, ni una
+tipografía. El raster no pasa por el worker, así que la imagen satelital se
+dibuja igual y parece que está todo bien. No hay error, no hay aviso: las capas
+existen, tienen datos, están arriba de todo y visibles, y no se ve nada.
+
+`scripts/preparar-worker-mapa.mjs` lo copia del paquete instalado a `public/`
+en el build y en postinstall. Van los DOS archivos —el worker importa a su
+hermano por ruta relativa—, con sus nombres originales.
+
+Esto explica además dos rarezas que se habían esquivado sin llegar a la causa:
+el evento `load` que nunca llegaba y `isStyleLoaded()` que nunca daba
+verdadero. Los dos eran el mismo síntoma.
+
+El estilo se arma en el código en vez de pedirle el suyo a MapTiler: los suyos
+traen una fuente vectorial que, sin worker, quedaba a medio cargar. Se pierden
+los rótulos de calles del mapa base —en el campo casi no existen—; los que sí
+importan son los que carga el usuario.
+
+Otras dos que costaron:
+
+- **Mientras se dibuja, un marcador es un lugar más del mapa.** El toque pasa
+  de largo y suma un vértice. Si abriera su ficha, no se podría dibujar encima
+  de un pozo, que es justo donde uno quiere marcar el perímetro o la entrada.
+- **vaul deja la app oculta para los lectores de pantalla.** Se apoya en Radix,
+  que marca el resto de la página con `aria-hidden` mientras hay una ficha
+  abierta —razonable para un diálogo modal, pero estas no lo son— y no siempre
+  lo limpia al cerrar. La app entera desaparecía para quien usa lector de
+  pantalla sin que se notara mirando la pantalla. Se vigila con un
+  MutationObserver mientras no hay ninguna ficha abierta.
 
 ### Seguridad
 

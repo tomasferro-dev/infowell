@@ -52,3 +52,6 @@ next-env.d.ts
 
 # capturas de verificacion visual
 /capturas
+
+# copia del worker de maplibre, la genera el build
+/public/maplibre

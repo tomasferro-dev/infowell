@@ -55,6 +55,7 @@ model User {
   interventionsCreated Intervention[]      @relation("InterventionAuthor")
   readingsCreated      WellStatusReading[] @relation("ReadingAuthor")
   settingsUpdated      AppSetting[]        @relation("SettingEditor")
+  annotationsCreated   MapAnnotation[]     @relation("AnnotationAuthor")
   observationsCreated  Observation[]       @relation("ObservationAuthor")
   receiptsCreated      Receipt[]           @relation("ReceiptAuthor")
 
@@ -125,9 +126,10 @@ model Farm {
   latitude  Decimal? @db.Decimal(10, 7)
   longitude Decimal? @db.Decimal(10, 7)
 
-  members  FarmMember[]
-  wells    Well[]
-  receipts Receipt[]
+  members     FarmMember[]
+  wells       Well[]
+  receipts    Receipt[]
+  annotations MapAnnotation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -390,4 +392,57 @@ model AppSetting {
   updatedAt   DateTime @updatedAt
   updatedById String?
   updatedBy   User?    @relation("SettingEditor", fields: [updatedById], references: [id])
+}
+
+/// Qué forma tiene una anotación del mapa.
+enum AnnotationKind {
+  PUNTO    // referencia suelta: una entrada, una tranquera, un cruce
+  LINEA    // división rápida, un callejón, un canal
+  POLIGONO // perímetro de la finca o de un sector
+}
+
+/// Dibujos sobre el mapa: cómo se llega y hasta dónde llega cada cosa.
+///
+/// Existen porque el mapa base no alcanza. El callejón de tierra que lleva a
+/// la finca no figura en ningún mapa, y el límite con el vecino no está
+/// marcado en el terreno. Eso lo sabe quien fue, y solo sirve si lo puede
+/// dejar anotado.
+///
+/// Cuelgan de una finca, no del mapa en general: es lo que las mete dentro del
+/// mismo cerco de autorización que todo lo demás. Una referencia siempre es
+/// «cómo se llega a tal lugar».
+model MapAnnotation {
+  id     String         @id @default(cuid())
+  farmId String
+  kind   AnnotationKind
+
+  label String? // «Entrada por el callejón», «Límite con el vecino»
+  notes String? // la explicación larga, si hace falta
+
+  /// Clave de la paleta (ver src/lib/anotaciones.ts), no un color suelto:
+  /// así el mapa mantiene una identidad y no termina siendo un arcoíris.
+  color String @default("rojo")
+
+  /// Si el polígono se pinta. Sirve para reconocer la finca desde lejos, y
+  /// molesta cuando hay varias encimadas: por eso se elige.
+  filled Boolean @default(false)
+
+  /// Coordenadas en formato GeoJSON, siempre [lon, lat]:
+  ///   PUNTO    → [lon, lat]
+  ///   LINEA    → [[lon, lat], …]
+  ///   POLIGONO → [[lon, lat], …] (sin repetir el primero al final)
+  ///
+  /// Json y no PostGIS: acá no se hacen consultas espaciales, se dibuja. Una
+  /// extensión de base para eso sería pagar complejidad sin usarla.
+  geometry Json
+
+  farm        Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User   @relation("AnnotationAuthor", fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([farmId, deletedAt])
 }

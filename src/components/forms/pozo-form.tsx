@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useActionState, useRef } from 'react'
 
 import { CapturaGps } from '@/components/forms/captura-gps'
+import { CAMPOS_ARRASTRADOS } from '@/lib/colocacion-mapa'
 import { BotonGuardar, Campo, CampoTexto, ErrorGeneral } from '@/components/forms/form-parts'
 import type { FormState } from '@/server/actions/farms'
 
@@ -46,12 +47,12 @@ export function PozoForm({
    * usuario aprendería a no usar el botón.
    */
   function elegirEnMapa() {
-    const params = new URLSearchParams({ colocar: farmIdParaMapa! })
+    const params = new URLSearchParams({ colocar: 'pozo', finca: farmIdParaMapa! })
     if (wellIdParaMapa) params.set('pozo', wellIdParaMapa)
 
     if (formulario.current) {
       const datos = new FormData(formulario.current)
-      for (const campo of ['name', 'code', 'drilledAt', 'notes']) {
+      for (const campo of CAMPOS_ARRASTRADOS.pozo) {
         const valor = datos.get(campo)
         if (typeof valor === 'string' && valor !== '') params.set(campo, valor)
       }

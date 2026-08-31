@@ -146,7 +146,7 @@ test.describe('crear un pozo desde el mapa', () => {
     await expect(lectura).toHaveText(/-?\d+\.\d{6}, -?\d+\.\d{6}/)
     const coordenadas = (await lectura.textContent())!.trim()
 
-    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+    await page.getByRole('button', { name: 'Marcar acá' }).click()
 
     // El formulario abre con la ubicación ya puesta y diciendo de dónde salió.
     await expect(page).toHaveURL(/\/pozos\/nuevo\?lat=/)
@@ -165,7 +165,7 @@ test.describe('crear un pozo desde el mapa', () => {
     await esperarMapa(page)
     await page.getByRole('button', { name: 'Agregar un pozo acá' }).click()
     await expect(page.locator('[data-colocando="true"]')).toBeVisible()
-    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+    await page.getByRole('button', { name: 'Marcar acá' }).click()
 
     const nombre = `Pozo del mapa ${marca}`
     await escribir(page.getByLabel('Nombre del pozo'), nombre)
@@ -226,7 +226,7 @@ test.describe('elegir el punto en el mapa desde el formulario', () => {
     await esperarMapa(page)
     await expect(page.locator('[data-colocando="true"]')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+    await page.getByRole('button', { name: 'Marcar acá' }).click()
 
     // Vuelve al alta con la ubicación puesta Y sin haber perdido lo escrito,
     // que es lo que haría que nadie use el botón una segunda vez.
@@ -241,6 +241,35 @@ test.describe('elegir el punto en el mapa desde el formulario', () => {
     await expect(page.locator(`.marcador-mapa[aria-label="Pozo ${nombre}"]`)).toHaveCount(1)
   })
 
+  test('una finca nueva también se puede ubicar desde el mapa', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto('/fincas/nueva')
+
+    const nombre = `Finca del mapa ${marca}`
+    await escribir(page.getByLabel('Nombre o razón social'), nombre)
+    await escribir(page.getByLabel('Localidad'), 'Tupungato')
+
+    await page.getByRole('button', { name: 'Elegir en el mapa' }).click()
+    await expect(page).toHaveURL(/\/mapa\?/)
+    await esperarMapa(page)
+
+    // Una finca nueva no tiene punto de partida: se coloca sobre lo que el
+    // usuario esté mirando, no en 0,0.
+    await expect(page.getByText(/Movés el mapa hasta poner la mira sobre la finca/)).toBeVisible()
+    await page.getByRole('button', { name: 'Marcar acá' }).click()
+
+    await expect(page).toHaveURL(/\/fincas\/nueva\?/)
+    await expect(page.getByText('Marcada en el mapa')).toBeVisible()
+    await expect(page.getByLabel('Nombre o razón social')).toHaveValue(nombre)
+    await expect(page.getByLabel('Localidad')).toHaveValue('Tupungato')
+
+    await page.getByRole('button', { name: 'Crear finca' }).click()
+    await expect(page.getByRole('heading', { name: nombre })).toBeVisible()
+
+    // Y quedó ubicada: aparece el enlace al mapa, que solo sale si tiene punto.
+    await expect(page.getByRole('link', { name: 'Mapa' })).toBeVisible()
+  })
+
   test('también se puede corregir la ubicación de un pozo ya cargado', async ({ page }) => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
     await page.goto(`/fincas/${datos.fincaPropiaId}/pozos/${datos.pozoPropioId}/editar`)
@@ -253,7 +282,7 @@ test.describe('elegir el punto en el mapa desde el formulario', () => {
     await page.getByRole('button', { name: 'Elegir en el mapa' }).click()
     await esperarMapa(page)
     await expect(page.locator('[data-colocando="true"]')).toBeVisible()
-    await page.getByRole('button', { name: 'Poner el pozo acá' }).click()
+    await page.getByRole('button', { name: 'Marcar acá' }).click()
 
     // Vuelve a la EDICIÓN, no al alta.
     await expect(page).toHaveURL(/\/pozos\/[^/]+\/editar\?/)

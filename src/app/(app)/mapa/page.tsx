@@ -1,6 +1,7 @@
 import { ChevronLeft, MapPinOff } from 'lucide-react'
 import Link from 'next/link'
 
+import { CAMPOS_ARRASTRADOS, esModo } from '@/lib/colocacion-mapa'
 import { VistaMapa } from '@/components/mapa/vista-mapa'
 import { Button } from '@/components/ui/button'
 import { puntosDelMapa } from '@/server/queries/farms'
@@ -13,7 +14,7 @@ export default async function MapaPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   // El acotamiento vive en la query: un CLIENTE solo recibe sus fincas.
-  const [{ marcadores, pozosSinUbicar, fincasSinUbicar }, query] = await Promise.all([
+  const [{ marcadores, anotaciones, pozosSinUbicar, fincasSinUbicar }, query] = await Promise.all([
     puntosDelMapa(),
     searchParams,
   ])
@@ -31,22 +32,21 @@ export default async function MapaPage({
   const punto = typeof query.punto === 'string' ? query.punto : undefined
 
   /*
-   * `?colocar=<farmId>` abre directo en modo colocación, desde el formulario
-   * de alta de pozo. Los demás campos vienen de arrastre para no perder lo que
-   * el usuario ya había escrito, y vuelven tal cual al formulario.
-   *
-   * El farmId no se valida contra la base: se usa solo para armar una ruta
-   * interna, y esa página tiene su propio guard. Uno inventado termina en un
-   * 404, no en un acceso.
+   * `?colocar=pozo|finca` abre directo en modo colocación, desde el formulario
+   * de alta o de edición. Los demás campos vienen de arrastre para no perder
+   * lo que el usuario ya había escrito, y vuelven tal cual al formulario.
+   * Ver `src/lib/colocacion-mapa.ts`.
    */
-  const colocar = typeof query.colocar === 'string' ? query.colocar : undefined
-  // Si viene, la colocación es para corregir un pozo que ya existe.
-  const pozoAEditar = typeof query.pozo === 'string' ? query.pozo : undefined
+  const modo = esModo(query.colocar) ? query.colocar : undefined
+  const fincaAColocar = typeof query.finca === 'string' ? query.finca : undefined
+  const pozoAColocar = typeof query.pozo === 'string' ? query.pozo : undefined
 
   const borrador: Record<string, string> = {}
-  for (const campo of ['name', 'code', 'drilledAt', 'notes']) {
-    const valor = query[campo]
-    if (typeof valor === 'string' && valor !== '') borrador[campo] = valor
+  if (modo) {
+    for (const campo of CAMPOS_ARRASTRADOS[modo]) {
+      const valor = query[campo]
+      if (typeof valor === 'string' && valor !== '') borrador[campo] = valor
+    }
   }
 
   const sinUbicar = pozosSinUbicar + fincasSinUbicar
@@ -56,13 +56,15 @@ export default async function MapaPage({
        menos el encabezado y la barra de navegación. */
     <div className="fixed inset-x-0 top-16 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10">
       <div className="absolute inset-0">
-        {marcadores.length > 0 || colocar ? (
+        {marcadores.length > 0 || modo ? (
           <VistaMapa
             marcadores={marcadores}
+            anotaciones={anotaciones}
             sinUbicar={sinUbicar}
             puntoInicial={punto}
-            colocarEnFinca={colocar}
-            pozoAEditar={pozoAEditar}
+            modo={modo}
+            fincaAColocar={fincaAColocar}
+            pozoAColocar={pozoAColocar}
             borrador={borrador}
           />
         ) : (

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { can } from '@/server/guards'
-import { obtenerPozo } from '@/server/queries/farms'
+import { numeroDelPozo, obtenerPozo } from '@/server/queries/farms'
 import {
   estadoActualDelPozo,
   historialDelPozo,
@@ -40,10 +40,11 @@ export default async function PozoPage({
   const pozo = await obtenerPozo(farmId, wellId)
   if (!pozo) notFound()
 
-  const [historial, estado, series, puedeEditar, puedeCargar] = await Promise.all([
+  const [historial, estado, series, numero, puedeEditar, puedeCargar] = await Promise.all([
     historialDelPozo(farmId, wellId),
     estadoActualDelPozo(farmId, wellId),
     seriesDeMediciones(farmId, wellId),
+    numeroDelPozo(farmId, wellId),
     can('write', 'well', farmId),
     can('write', 'intervention', farmId),
   ])
@@ -96,13 +97,24 @@ export default async function PozoPage({
       </Button>
 
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-start gap-3">
+          {/* El mismo número que lleva en el mapa. */}
+          {numero === null ? null : (
+            <span
+              aria-label={`Pozo número ${numero} de la finca`}
+              className="bg-primary/10 text-primary mt-0.5 grid size-9 shrink-0 place-items-center rounded-full text-base font-bold tabular-nums"
+            >
+              {numero}
+            </span>
+          )}
+          <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{pozo.name}</h1>
           <p className="text-muted-foreground text-sm">
             {pozo.drilledAt
               ? `Perforado el ${formatoFecha.format(pozo.drilledAt)}`
               : 'Sin fecha de perforación registrada'}
           </p>
+          </div>
         </div>
 
         {puedeEditar ? (

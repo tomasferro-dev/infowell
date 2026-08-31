@@ -2,9 +2,18 @@
 
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 import { FichaMapa, TOPES, TOPE_QUE_SIGUE_EL_MAPA } from '@/components/mapa/ficha-mapa'
+import { PanelDibujo, type DatosDibujo } from '@/components/mapa/panel-dibujo'
+import { esClaveColor, type Forma } from '@/lib/anotaciones'
+import { destinoDeColocacion, type ModoColocacion } from '@/lib/colocacion-mapa'
+import {
+  borrarAnotacionAction,
+  guardarAnotacionAction,
+} from '@/server/actions/anotaciones'
+import type { AnotacionMapa } from '@/server/queries/farms'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { MarcadorMapa } from '@/server/queries/farms'
 
@@ -13,6 +22,15 @@ import type { MarcadorMapa } from '@/server/queries/farms'
  * pesa lo suyo, así que entra por dynamic con ssr apagado. Mientras baja se
  * muestra un esqueleto, no una pantalla en blanco.
  */
+type Dibujando = {
+  forma: Forma
+  rectangulo: boolean
+  farmId: string
+  /** Si viene, se está editando un dibujo que ya existe. */
+  id?: string
+  puntos: [number, number][]
+}
+
 const Mapa = dynamic(() => import('@/components/mapa/mapa').then((m) => m.Mapa), {
   ssr: false,
   loading: () => (
@@ -29,30 +47,38 @@ const Mapa = dynamic(() => import('@/components/mapa/mapa').then((m) => m.Mapa),
 })
 
 type Colocando = {
-  farmId: string
+  modo: ModoColocacion
+  farmId?: string
+  wellId?: string
   lat: number
   lon: number
-  nombreFinca: string
-  /** La finca no está ubicada: no hay adónde volar, se coloca donde se esté. */
+  /** Qué se está ubicando, para decírselo al usuario mientras apunta. */
+  quePunto: string
+  /** No hay punto de partida: se coloca sobre lo que el usuario esté mirando. */
   sinPunto?: boolean
 }
 
 export function VistaMapa({
   marcadores,
+  anotaciones,
   sinUbicar,
   puntoInicial,
-  colocarEnFinca,
-  pozoAEditar,
+  modo,
+  fincaAColocar,
+  pozoAColocar,
   borrador,
 }: {
   marcadores: MarcadorMapa[]
+  anotaciones: AnotacionMapa[]
   sinUbicar: number
   /** Id de finca o pozo con el que abrir el mapa ya encuadrado. */
   puntoInicial?: string
-  /** Si viene, el mapa abre directo en modo colocación para esa finca. */
-  colocarEnFinca?: string
-  /** Si la colocación es para corregir un pozo existente, su id. */
-  pozoAEditar?: string
+  /** Si viene, el mapa abre directo en modo colocación. */
+  modo?: ModoColocacion
+  /** La finca: dueña del pozo que se coloca, o la que se está editando. */
+  fincaAColocar?: string
+  /** Si se está corrigiendo un pozo que ya existe, su id. */
+  pozoAColocar?: string
   /** Lo que el usuario ya había escrito en el formulario, para devolvérselo. */
   borrador?: Record<string, string>
 }) {
@@ -61,19 +87,25 @@ export function VistaMapa({
     marcadores.find((m) => m.id === puntoInicial),
   )
   const [colocando, setColocando] = useState<Colocando | undefined>(() => {
-    if (!colocarEnFinca) return undefined
+    if (!modo) return undefined
 
-    // La finca puede no estar todavía en el mapa (sin coordenadas propias).
-    // En ese caso se coloca desde donde haya quedado la vista, que es mejor
-    // que mandarlo al medio de la nada.
-    const finca = marcadores.find((m) => m.id === colocarEnFinca)
+    // El punto de partida es la finca, si ya está ubicada. Una finca nueva no
+    // lo está, y un pozo de una finca sin marcar tampoco: en esos casos se
+    // coloca sobre lo que el usuario esté mirando, que es mejor que mandarlo
+    // al medio de la nada.
+    const ancla = marcadores.find((m) => m.id === (pozoAColocar ?? fincaAColocar))
 
     return {
-      farmId: colocarEnFinca,
-      lat: finca?.lat ?? 0,
-      lon: finca?.lon ?? 0,
-      nombreFinca: finca?.nombre ?? 'la finca',
-      sinPunto: finca === undefined,
+      modo,
+      farmId: fincaAColocar,
+      wellId: pozoAColocar,
+      lat: ancla?.lat ?? 0,
+      lon: ancla?.lon ?? 0,
+      quePunto:
+        modo === 'finca'
+          ? 'la finca'
+          : `el pozo${ancla && ancla.tipo === 'finca' ? ` de ${ancla.nombre}` : ''}`,
+      sinPunto: ancla === undefined,
     }
   })
 
@@ -81,6 +113,58 @@ export function VistaMapa({
   // porque el mapa lo necesita: es cuánta pantalla tiene que descontar para
   // que el punto elegido no quede debajo.
   const [tope, setTope] = useState<number | string | null>(TOPES[0]!)
+
+  const [dibujando, setDibujando] = useState<Dibujando>()
+  // Cuando el dibujo está terminado y falta ponerle nombre.
+  const [porGuardar, setPorGuardar] = useState<Dibujando>()
+  const [guardando, setGuardando] = useState(false)
+  const [verAnotaciones, setVerAnotaciones] = useState(true)
+
+  /**
+   * Devuelve la app a los lectores de pantalla al cerrar una ficha.
+   *
+   * vaul se apoya en Radix, que mientras hay una ficha abierta marca el resto
+   * de la página con `aria-hidden` — razonable para un diálogo modal, pero
+   * estas fichas NO son modales: el mapa tiene que seguir usable debajo. Y al
+   * cerrarse no siempre lo limpia, sobre todo cuando se abre una ficha desde
+   * otra. El resultado es que la app entera —mapa, barra de dibujo,
+   * navegación— desaparece para quien usa lector de pantalla, sin que se note
+   * mirando la pantalla.
+   *
+   * Se limpia solo cuando no hay ninguna ficha abierta, para no pisar el
+   * comportamiento correcto mientras sí la hay.
+   */
+  const hayFicha = seleccionado !== undefined || porGuardar !== undefined
+
+  useEffect(() => {
+    if (hayFicha) return
+
+    // Se vigila el documento entero, no un elemento en particular: vaul marca
+    // ancestros distintos según desde dónde se abrió la ficha, y limpiar uno
+    // solo dejaba la app oculta igual.
+    const limpiar = () => {
+      for (const el of document.querySelectorAll('[aria-hidden="true"]')) {
+        // Lo que está adentro de una ficha, y los íconos marcados a mano como
+        // decorativos, SÍ tienen que seguir ocultos.
+        if (el.closest('[data-vaul-drawer]')) continue
+        if (el.tagName.toLowerCase() === 'svg') continue
+        if (!el.contains(document.querySelector('main'))) continue
+
+        el.removeAttribute('aria-hidden')
+      }
+    }
+
+    limpiar()
+
+    const vigia = new MutationObserver(limpiar)
+    vigia.observe(document.body, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ['aria-hidden'],
+    })
+
+    return () => vigia.disconnect()
+  }, [hayFicha])
 
   // Cada punto nuevo vuelve a abrir en el tope chico: se toca un pozo para
   // ver de qué se trata, no para que la ficha tape el mapa. El reajuste va
@@ -98,6 +182,26 @@ export function VistaMapa({
         marcadores={marcadores}
         seleccionado={seleccionado}
         onSeleccion={setSeleccionado}
+        anotaciones={anotaciones}
+        verAnotaciones={verAnotaciones}
+        onVerAnotaciones={setVerAnotaciones}
+        dibujando={dibujando}
+        onPuntos={(puntos) => {
+          setDibujando((actual) => (actual ? { ...actual, puntos } : actual))
+
+          // El rectángulo se cierra solo con la segunda esquina: pedirle
+          // además que toque «Listo» sería un paso de más.
+          if (dibujando?.rectangulo && puntos.length === 4) {
+            setDibujando(undefined)
+            setPorGuardar({ ...dibujando, puntos })
+          }
+        }}
+        onTerminarDibujo={() => {
+          if (!dibujando) return
+          setDibujando(undefined)
+          setPorGuardar(dibujando)
+        }}
+        onCancelarDibujo={() => setDibujando(undefined)}
         irAMiUbicacion={puntoInicial === undefined}
         altoFicha={
           seleccionado && typeof tope === 'number'
@@ -116,11 +220,8 @@ export function VistaMapa({
             lat: lat.toFixed(7),
             lon: lon.toFixed(7),
           })
-          const destino = pozoAEditar
-            ? `/fincas/${colocando!.farmId}/pozos/${pozoAEditar}/editar`
-            : `/fincas/${colocando!.farmId}/pozos/nuevo`
-
-          router.push(`${destino}?${params}`)
+          const c = colocando!
+          router.push(`${destinoDeColocacion(c.modo, c.farmId, c.wellId)}?${params}`)
         }}
       />
 
@@ -137,15 +238,95 @@ export function VistaMapa({
         </p>
       ) : null}
 
+      {porGuardar ? (
+        <PanelDibujo
+          forma={porGuardar.forma}
+          puntos={porGuardar.puntos.length}
+          guardando={guardando}
+          inicial={
+            porGuardar.id
+              ? (() => {
+                  const previa = anotaciones.find((a) => a.id === porGuardar.id)
+                  return {
+                    etiqueta: previa?.etiqueta ?? '',
+                    notas: previa?.notas ?? '',
+                    color: esClaveColor(previa?.color) ? previa.color : 'rojo',
+                    pintado: previa?.pintado ?? false,
+                  }
+                })()
+              : undefined
+          }
+          onCancelar={() => {
+            if (guardando) return
+            setPorGuardar(undefined)
+          }}
+          onBorrar={
+            porGuardar.id
+              ? async () => {
+                  setGuardando(true)
+                  const r = await borrarAnotacionAction(porGuardar.farmId, porGuardar.id!)
+                  setGuardando(false)
+
+                  if (!r.ok) {
+                    toast.error(r.error)
+                    return
+                  }
+
+                  setPorGuardar(undefined)
+                  toast.success('Dibujo borrado')
+                  router.refresh()
+                }
+              : undefined
+          }
+          onGuardar={async (datos: DatosDibujo) => {
+            setGuardando(true)
+            const r = await guardarAnotacionAction({
+              id: porGuardar.id,
+              farmId: porGuardar.farmId,
+              forma: porGuardar.forma,
+              puntos: porGuardar.puntos,
+              etiqueta: datos.etiqueta,
+              notas: datos.notas,
+              color: datos.color,
+              pintado: datos.pintado,
+            })
+            setGuardando(false)
+
+            if (!r.ok) {
+              toast.error(r.error)
+              return
+            }
+
+            setPorGuardar(undefined)
+            toast.success('Dibujo guardado')
+            // Sin esto el mapa seguiría mostrando el estado anterior: los
+            // dibujos vienen del servidor.
+            router.refresh()
+          }}
+        />
+      ) : null}
+
       <FichaMapa
         marcador={seleccionado}
         onCerrar={() => setSeleccionado(undefined)}
         tope={tope}
         onTope={setTope}
+        onDibujar={(finca, forma, esRectangulo) => {
+          // La ficha se va: el mapa tiene que quedar entero para dibujar.
+          setSeleccionado(undefined)
+          setVerAnotaciones(true)
+          setDibujando({ forma, rectangulo: esRectangulo, farmId: finca.farmId, puntos: [] })
+        }}
         onColocarPozo={(finca) => {
           // La ficha se cierra: el mapa tiene que quedar entero para apuntar.
           setSeleccionado(undefined)
-          setColocando(finca)
+          setColocando({
+            modo: 'pozo',
+            farmId: finca.farmId,
+            lat: finca.lat,
+            lon: finca.lon,
+            quePunto: `el pozo de ${finca.nombreFinca}`,
+          })
         }}
       />
     </div>

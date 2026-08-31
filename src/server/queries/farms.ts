@@ -1,7 +1,9 @@
 import 'server-only'
 
 import type { Prisma } from '@/generated/prisma/client'
+import { validarGeometria } from '@/lib/anotaciones'
 import { inicialesDeFinca, numerarPozos } from '@/lib/etiquetas-mapa'
+import { authorize } from '@/server/authz'
 import { prisma } from '@/server/db'
 import { criterioDeNumeracion } from '@/server/queries/ajustes'
 import { requireAccess, requireActor } from '@/server/guards'
@@ -60,26 +62,62 @@ export async function listarFincas(busqueda?: string) {
 export async function obtenerFinca(farmId: string) {
   await requireAccess('read', 'farm', farmId)
 
-  return prisma.farm.findFirst({
-    where: { id: farmId, deletedAt: null },
-    include: {
-      wells: {
-        where: { deletedAt: null },
-        orderBy: { name: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          code: true,
-          isActive: true,
-          _count: { select: { interventions: { where: { deletedAt: null } } } },
+  const [finca, criterio] = await Promise.all([
+    prisma.farm.findFirst({
+      where: { id: farmId, deletedAt: null },
+      include: {
+        wells: {
+          where: { deletedAt: null },
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            isActive: true,
+            createdAt: true,
+            drilledAt: true,
+            _count: { select: { interventions: { where: { deletedAt: null } } } },
+          },
         },
+        members: {
+          select: { user: { select: { id: true, name: true, email: true, role: true } } },
+        },
+        _count: { select: { receipts: { where: { deletedAt: null } } } },
       },
-      members: {
-        select: { user: { select: { id: true, name: true, email: true, role: true } } },
-      },
-      _count: { select: { receipts: { where: { deletedAt: null } } } },
-    },
-  })
+    }),
+    criterioDeNumeracion(),
+  ])
+
+  if (!finca) return null
+
+  // El número que se ve en el mapa tiene que ser el mismo acá: si no
+  // coincidiera, dejaría de servir para nombrar un pozo en voz alta.
+  const numeros = numerarPozos(finca.wells, criterio)
+
+  return {
+    ...finca,
+    wells: finca.wells.map((pozo) => ({ ...pozo, numero: numeros.get(pozo.id) ?? null })),
+  }
+}
+
+/**
+ * Qué número le toca a un pozo dentro de su finca.
+ *
+ * Se numeran todos los pozos de la finca y después se busca el que interesa:
+ * numerar solo el pedido daría siempre 1.
+ */
+export async function numeroDelPozo(farmId: string, wellId: string) {
+  await requireAccess('read', 'well', farmId)
+
+  const [pozos, criterio] = await Promise.all([
+    prisma.well.findMany({
+      where: { farmId, deletedAt: null },
+      select: { id: true, createdAt: true, drilledAt: true },
+    }),
+    criterioDeNumeracion(),
+  ])
+
+  return numerarPozos(pozos, criterio).get(wellId) ?? null
 }
 
 export async function obtenerPozo(farmId: string, wellId: string) {
@@ -123,7 +161,11 @@ export async function fincasParaSelector() {
  * pero se cuentan: el mapa avisa cuántos faltan en vez de mentir por omisión.
  */
 export async function puntosDelMapa() {
-  const [scope, criterio] = await Promise.all([scopeDeFincas(), criterioDeNumeracion()])
+  const [scope, criterio, actor] = await Promise.all([
+    scopeDeFincas(),
+    criterioDeNumeracion(),
+    requireActor(),
+  ])
 
   const fincas = await prisma.farm.findMany({
     where: { ...scope, deletedAt: null },
@@ -174,6 +216,24 @@ export async function puntosDelMapa() {
     },
   })
 
+  // Los dibujos salen del MISMO scope que los marcadores: es la misma
+  // consulta acotada, así que un cliente no recibe los de otra finca.
+  const dibujos = await prisma.mapAnnotation.findMany({
+    where: { deletedAt: null, farm: { ...scope, deletedAt: null } },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      farmId: true,
+      kind: true,
+      label: true,
+      notes: true,
+      color: true,
+      filled: true,
+      geometry: true,
+      farm: { select: { name: true } },
+    },
+  })
+
   let pozosSinUbicar = 0
   let fincasSinUbicar = 0
 
@@ -200,6 +260,7 @@ export async function puntosDelMapa() {
           detalle: pozo.code,
           nombreFinca: finca.name,
           etiqueta: String(numeros.get(pozo.id) ?? '?'),
+          puedeDibujar: false,
           intervenciones: pozo._count.interventions,
           lat: pozo.latitude.toNumber(),
           lon: pozo.longitude.toNumber(),
@@ -234,6 +295,9 @@ export async function puntosDelMapa() {
         etiqueta: inicialesDeFinca(finca.name),
         // En la finca el número que importa es cuántos pozos tiene.
         intervenciones: finca.wells.length,
+        // Se decide por finca y no por rol: si mañana un CARGADOR puede
+        // escribir algunas fincas, esto ya funciona sin tocarlo.
+        puedeDibujar: authorize(actor, 'write', 'farm', finca.id),
         lat: finca.latitude.toNumber(),
         lon: finca.longitude.toNumber(),
         ultimaVisita: null,
@@ -243,7 +307,30 @@ export async function puntosDelMapa() {
     ]
   })
 
-  return { marcadores, pozosSinUbicar, fincasSinUbicar }
+  // La geometría se valida al leer, no solo al escribir: la columna es Json y
+  // una fila vieja o tocada a mano no puede tumbar el mapa entero.
+  const anotaciones = dibujos.flatMap((d) => {
+    const geo = validarGeometria(d.kind, d.geometry)
+    if (!geo.ok) return []
+
+    return [
+      {
+        id: d.id,
+        farmId: d.farmId,
+        nombreFinca: d.farm.name,
+        forma: d.kind,
+        etiqueta: d.label,
+        notas: d.notes,
+        color: d.color,
+        pintado: d.filled,
+        puntos: geo.puntos,
+      },
+    ]
+  })
+
+  return { marcadores, anotaciones, pozosSinUbicar, fincasSinUbicar }
 }
+
+export type AnotacionMapa = Awaited<ReturnType<typeof puntosDelMapa>>['anotaciones'][number]
 
 export type MarcadorMapa = Awaited<ReturnType<typeof puntosDelMapa>>['marcadores'][number]

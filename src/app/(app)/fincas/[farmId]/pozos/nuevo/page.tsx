@@ -3,26 +3,11 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PozoForm } from '@/components/forms/pozo-form'
+import { textoDeUrl, ubicacionDeUrl } from '@/lib/colocacion-mapa'
 import { Button } from '@/components/ui/button'
 import { crearPozoAction } from '@/server/actions/farms'
 import { requireAccess } from '@/server/guards'
 import { obtenerFinca } from '@/server/queries/farms'
-
-/**
- * Una coordenada que llegó por la URL.
- *
- * Viene del mapa, pero la URL la escribe cualquiera: si no es un número dentro
- * del rango se descarta en silencio y el formulario abre vacío. Mostrar un
- * error no tendría sentido — el usuario no escribió eso.
- */
-function coordenada(valor: string | string[] | undefined, tope: number) {
-  if (typeof valor !== 'string') return null
-
-  const n = Number(valor)
-  if (!Number.isFinite(n) || Math.abs(n) > tope) return null
-
-  return n.toFixed(7)
-}
 
 export default async function NuevoPozoPage({
   params,
@@ -33,14 +18,7 @@ export default async function NuevoPozoPage({
 }) {
   const [{ farmId }, query] = await Promise.all([params, searchParams])
 
-  const latitude = coordenada(query.lat, 90)
-  const longitude = coordenada(query.lon, 180)
-  // Una sola coordenada no ubica nada: o vienen las dos o no viene ninguna.
-  const desdeMapa = latitude !== null && longitude !== null
-
-  /** Lo que el usuario había escrito antes de irse al mapa a marcar el punto. */
-  const texto = (valor: string | string[] | undefined) =>
-    typeof valor === 'string' && valor !== '' ? valor : null
+  const { latitude, longitude, desdeMapa } = ubicacionDeUrl(query)
 
   await requireAccess('write', 'well', farmId)
 
@@ -64,12 +42,12 @@ export default async function NuevoPozoPage({
         action={action}
         textoBoton="Crear pozo"
         pozo={{
-          name: texto(query.name) ?? '',
-          code: texto(query.code),
+          name: textoDeUrl(query.name) ?? '',
+          code: textoDeUrl(query.code),
           latitude,
           longitude,
-          drilledAt: texto(query.drilledAt),
-          notes: texto(query.notes),
+          drilledAt: textoDeUrl(query.drilledAt),
+          notes: textoDeUrl(query.notes),
         }}
         origenUbicacion={desdeMapa ? 'mapa' : undefined}
         farmIdParaMapa={farmId}
