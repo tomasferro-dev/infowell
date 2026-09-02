@@ -52,8 +52,8 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 ```
 tsc          0 errores
 eslint       0 errores
-vitest       147 tests
-playwright   290 tests e2e (contra Supabase real, 2 viewports)
+vitest       156 tests
+playwright   302 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -457,6 +457,7 @@ el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 
 | Pendiente | Nota |
 |---|---|
+| **Historial en el respaldo** | Hoy el respaldo lleva fincas, pozos y dibujos. Las intervenciones y mediciones no. |
 | **Cola de subida offline** | IndexedDB + Background Sync. Difirido a propósito: si falla en silencio, el operario cree que guardó y no guardó. Es una fase propia. |
 | **Limpieza de archivos huérfanos** | Si alguien graba un audio y abandona el formulario, el archivo queda en el bucket sin fila. |
 
@@ -477,7 +478,17 @@ el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 | **Cargar coordenadas de las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos demo ya vienen ubicados; las fincas reales hay que salir a marcarlas. |
 | **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md — sin eso la clave sirve desde cualquier sitio. |
 
-### ⚠️ Separar Supabase dev/prod — pendiente recomendado
+### ⚠️ Separar Supabase dev/prod — el paso que falta
+
+Los pasos exactos están en DEPLOY.md. En resumen: se crea una base NUEVA para
+desarrollo y la actual queda como producción —al revés habría que cambiar
+variables en Vercel y migrar datos, sin ninguna ventaja—. Vercel no se toca.
+
+`npm run db:donde` imprime a qué proyecto apunta el `.env` sin mostrar
+contraseñas. Vale mirarlo antes de correr los tests: es la diferencia entre
+borrar datos de prueba y borrar los del cliente.
+
+#### Por qué urge
 
 **Hoy producción y desarrollo comparten el mismo proyecto de Supabase.** Eso
 significa que los tests e2e escriben y borran en la misma base que usa la app
@@ -900,6 +911,33 @@ cliente dónde están las fincas de otros. Por eso tienen recurso propio en
 
 El CARGADOR sí puede marcarlos: es el que anda por la ruta y sabe por dónde se
 entra.
+
+### Respaldo de los datos
+
+`/admin/configuracion` baja un JSON con **fincas, pozos y todo lo dibujado**, y
+lo vuelve a cargar. Sirve para guardarse una copia y para mudar los datos a
+otra instalación —por ejemplo al separar la base de pruebas de la del cliente.
+
+⚠️ **No es una copia completa, y la pantalla lo dice.** Quedan afuera los
+remitos y las notas de voz —sus fotos y audios viven en el almacenamiento de
+archivos y no entran en un archivo de texto; restaurar solo la fila dejaría
+remitos apuntando a fotos que no existen—, el historial de intervenciones y
+los usuarios. Un respaldo que promete más de lo que guarda es peor que no
+tener ninguno: el día que haga falta, ya es tarde para enterarse.
+
+Importar es un **upsert por id**, no un borrado y alta: importar dos veces deja
+lo mismo que importar una, y volver a cargar una copia vieja corrige lo que
+estaba en ella sin borrar lo que se agregó después. Un import que borrara
+primero convertiría cada equivocación en pérdida de datos.
+
+La geometría de cada dibujo se valida con las mismas reglas que al dibujarlo
+—el archivo lo pudo tocar cualquiera— y los que quedarían huérfanos se omiten
+y se cuentan, en vez de hacer fallar la importación entera.
+
+⚠️ **Los tests que IMPORTAN usan un archivo acotado a su propia finca.** Un
+import completo reescribe todas las fincas y revierte lo que otro test acababa
+de cambiar: tumbó un test de dibujos que no tenía nada que ver. Exportar, que
+es de solo lectura, sí se prueba entero.
 
 ### Seguridad
 

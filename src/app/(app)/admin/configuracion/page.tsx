@@ -1,6 +1,8 @@
 import { CatalogoTabs } from '@/components/layout/catalogo-tabs'
 import { NumeracionPozos } from '@/components/forms/numeracion-pozos'
+import { RespaldoDatos } from '@/components/forms/respaldo-datos'
 import { guardarNumeracionAction } from '@/server/actions/ajustes'
+import { exportarAction, importarAction } from '@/server/actions/respaldo'
 import { requireAccess } from '@/server/guards'
 import { criterioDeNumeracion } from '@/server/queries/ajustes'
 
@@ -24,6 +26,10 @@ export default async function ConfiguracionPage() {
       </div>
 
       <NumeracionPozos criterio={criterio} onGuardar={guardarNumeracionAction} />
+
+      <hr />
+
+      <RespaldoDatos onExportar={exportarAction} onImportar={importarAction} />
     </div>
   )
 }
