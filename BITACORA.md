@@ -60,11 +60,10 @@ El login exige un email válido, así que el usuario del cliente no pudo ser
 Cuatro fincas con nombres de fantasía, siete pozos, siete remitos, veinticuatro
 intervenciones y cinco dibujos hechos a mano por el cliente (§8).
 
-⚠️ **Producción tiene además cuatro fincas `e2e-…` de una corrida del 2 de
-septiembre, anterior a la separación de las bases.** El administrador las ve en
-el listado y en el mapa. Se sacan con `scripts/limpiar-pruebas.ts` —en seco por
-defecto, `--aplicar` para que lo haga—; ver §10. De acá en adelante no puede
-volver a pasar: los tests corren contra `infowell-dev`.
+Producción arrastraba además cuatro fincas `e2e-…` de una corrida anterior a la
+separación de las bases, que el administrador veía en el listado y en el mapa.
+Se sacaron el 2 de septiembre con `scripts/limpiar-pruebas.ts --aplicar`. No
+puede volver a pasar: los tests corren contra `infowell-dev`.
 
 ### Las bases: separadas
 
