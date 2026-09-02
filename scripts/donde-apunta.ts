@@ -1,35 +1,23 @@
-import 'dotenv/config'
+import { ARCHIVO_DEV, proyectoDelArchivo } from './entorno'
 
 /**
- * A qué base apunta el `.env` de esta máquina.
+ * A qué base habla cada cosa.
  *
- * Existe porque hay dos —la de desarrollo y la que usa el cliente— y desde la
- * terminal se ven idénticas. Correr los tests contra la equivocada borra datos
- * reales, y no hay forma de darse cuenta hasta que ya pasó.
- *
- * No imprime contraseñas: solo el proyecto, el host y el puerto.
+ * Existe porque hay dos —la del cliente y la de desarrollo— y desde la
+ * terminal se ven idénticas.
  */
 
-function describir(nombre: string) {
-  const valor = process.env[nombre]
-  if (!valor) return `${nombre.padEnd(26)} ✗ falta`
+const produccion = proyectoDelArchivo('.env')
+const desarrollo = proyectoDelArchivo(ARCHIVO_DEV)
 
-  try {
-    const url = new URL(valor)
-    // El usuario del pooler de Supabase es «postgres.<proyecto>».
-    const proyecto = url.username.includes('.') ? url.username.split('.')[1] : '(directo)'
-    return `${nombre.padEnd(26)} ${proyecto}  ·  ${url.hostname}:${url.port || '5432'}`
-  } catch {
-    return `${nombre.padEnd(26)} ✗ no parsea como URL`
-  }
+console.log('\n  .env           (npm run dev, Vercel) → ' + (produccion ?? '✗ no se pudo leer'))
+console.log(`  ${ARCHIVO_DEV}      (tests, db:*:dev)     → ` + (desarrollo ?? '✗ no existe'))
+
+if (!desarrollo) {
+  console.log('\n  ⚠️  Sin ' + ARCHIVO_DEV + ' los tests NO corren: cortan antes de tocar nada.')
+  console.log('     Ver DEPLOY.md para armarlo.\n')
+} else if (desarrollo === produccion) {
+  console.log('\n  ⚠️  Son el MISMO proyecto. Los tests van a cortar: crean y borran datos.\n')
+} else {
+  console.log('\n  ✓ Separadas. Los tests no tocan la base del cliente.\n')
 }
-
-console.log('\nA qué base apunta este .env:\n')
-console.log(' ', describir('DATABASE_URL'))
-console.log(' ', describir('DIRECT_URL'))
-
-const storage = process.env.NEXT_PUBLIC_SUPABASE_URL
-console.log(' ', 'NEXT_PUBLIC_SUPABASE_URL'.padEnd(26) + ' ' + (storage ?? '✗ falta'))
-
-console.log('\n⚠️  Los tests CREAN Y BORRAN datos en esta base.')
-console.log('   Si es la que usa el cliente, no los corras.\n')

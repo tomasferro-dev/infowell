@@ -186,27 +186,49 @@ y migrar datos, sin ninguna ventaja.
 ⚠️ **Vercel no se toca.** Sigue apuntando al proyecto de siempre, que pasa a
 ser producción y queda sin tests encima.
 
-### Lo que sigue después (local)
+### El `.env` NO se toca
 
-Con las cuatro variables nuevas en el `.env`:
+Las credenciales de desarrollo van en un archivo aparte, **`.env.test`**, con
+solo esas cuatro líneas:
 
-```bash
-npm run db:deploy   # crea las tablas
-npm run db:seed     # crea el admin
-npm run db:demo     # datos de demostración, opcional
+```
+DATABASE_URL=…
+DIRECT_URL=…
+NEXT_PUBLIC_SUPABASE_URL=…
+SUPABASE_SERVICE_ROLE_KEY=…
 ```
 
-Y para verificar que quedó apuntando donde corresponde:
+El `.env` queda como está —producción, lo mismo que hay en Vercel— y nunca más
+se edita. `.env.test` se pone *encima* solo para los tests y para los comandos
+de base contra desarrollo; el resto de las variables (`AUTH_SECRET`,
+`SEED_ADMIN_*`, `NEXT_PUBLIC_MAPTILER_KEY`) se siguen tomando del `.env`.
+
+Antes esto se resolvía cambiando el `.env` de ida y vuelta a mano. Funciona
+hasta el día que uno se olvida de volver atrás y corre trescientos tests
+—que crean y borran— contra los datos del cliente.
+
+### Preparar la base de desarrollo
+
+```bash
+npm run db:preparar:dev
+```
+
+Corre las migraciones, el seed y los datos de demostración contra `.env.test`.
+También están sueltos: `db:deploy:dev`, `db:seed:dev`, `db:demo:dev`.
+
+### La traba
+
+Los tests **no arrancan** si falta `.env.test` o si apunta al mismo proyecto
+que el `.env`. Cortan antes de tocar nada, con un mensaje que dice qué falta.
+
+No es un aviso en la documentación: es una traba en `playwright.config.ts`. Un
+descuido de un minuto se lleva datos que no se recuperan.
+
+Para ver dónde está parado cada uno, sin mostrar contraseñas:
 
 ```bash
 npm run db:donde
 ```
-
-### Cómo saber en cuál estás parado
-
-`npm run db:donde` imprime el proyecto de Supabase al que apunta el `.env`, sin
-mostrar contraseñas. Vale la pena mirarlo antes de correr los tests: es la
-diferencia entre borrar datos de prueba y borrar los del cliente.
 
 ### Y si igual hay que mover datos
 

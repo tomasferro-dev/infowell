@@ -52,7 +52,7 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 ```
 tsc          0 errores
 eslint       0 errores
-vitest       156 tests
+vitest       163 tests
 playwright   302 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```

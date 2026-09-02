@@ -1,8 +1,15 @@
 // Los tests usan las credenciales del seed desde el entorno, nunca escritas
 // en el código: hay que cargar el .env antes de leerlas.
-import 'dotenv/config'
-
+//
+// Y leen la base de DESARROLLO, nunca la de producción: cargarEntorno pone
+// .env.test encima del .env, y exigirBaseDeDesarrollo corta si no está o si
+// apunta al mismo proyecto. Ver scripts/entorno.ts.
 import { defineConfig, devices } from '@playwright/test'
+
+import { cargarEntorno, exigirBaseDeDesarrollo } from './scripts/entorno'
+
+cargarEntorno()
+exigirBaseDeDesarrollo()
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3000'
 

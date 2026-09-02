@@ -18,7 +18,11 @@
     "db:studio": "prisma studio",
     "db:demo": "tsx prisma/datos-demo.ts",
     "mapa:worker": "node scripts/preparar-worker-mapa.mjs",
-    "db:donde": "tsx scripts/donde-apunta.ts"
+    "db:donde": "tsx scripts/donde-apunta.ts",
+    "db:deploy:dev": "tsx scripts/con-dev.ts prisma migrate deploy",
+    "db:seed:dev": "tsx scripts/con-dev.ts prisma db seed",
+    "db:demo:dev": "tsx scripts/con-dev.ts tsx prisma/datos-demo.ts",
+    "db:preparar:dev": "npm run db:deploy:dev && npm run db:seed:dev && npm run db:demo:dev"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
