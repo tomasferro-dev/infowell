@@ -5,7 +5,7 @@
 > nada más**: ni memoria previa, ni explorar el código para entender por qué
 > las cosas son como son.
 >
-> Última actualización: 16 de agosto de 2026.
+> Última actualización: 2 de septiembre de 2026.
 
 ---
 
@@ -58,23 +58,28 @@ El login exige un email válido, así que el usuario del cliente no pudo ser
 ### Qué datos hay
 
 Cuatro fincas con nombres de fantasía, siete pozos, siete remitos, veinticuatro
-intervenciones y cinco dibujos hechos a mano por el cliente (§8). Los restos de
-los tests se limpiaron con `scripts/limpiar-pruebas.ts`; ver §10.
+intervenciones y cinco dibujos hechos a mano por el cliente (§8).
 
-### Las bases: a mitad de camino
+⚠️ **Producción tiene además cuatro fincas `e2e-…` de una corrida del 2 de
+septiembre, anterior a la separación de las bases.** El administrador las ve en
+el listado y en el mapa. Se sacan con `scripts/limpiar-pruebas.ts` —en seco por
+defecto, `--aplicar` para que lo haga—; ver §10. De acá en adelante no puede
+volver a pasar: los tests corren contra `infowell-dev`.
 
-| | Base | Estado |
+### Las bases: separadas
+
+| | Proyecto | Quién la usa |
 |---|---|---|
-| **Producción** | `erdpbfcidqxfcxahnwjp` | La que usa Vercel y el cliente |
-| **Desarrollo** | `infowell-dev` | Creada por el usuario, **sin configurar todavía** |
+| **Producción** | `erdpbfcidqxfcxahnwjp` | Vercel y el cliente. Se lee del `.env`, que no se toca. |
+| **Desarrollo** | `nqlfszunnqbqfeulpugc` (`infowell-dev`) | Los tests y los comandos `db:*:dev`. Se lee del `.env.test`. |
 
-La máquinaria para separarlas ya está: el `.env` queda en producción y no se
-toca, `.env.test` pisa encima solo las cuatro variables de la base, y hay una
-**traba que impide que los tests corran contra la base del cliente**.
+El `.env` es producción y queda quieto; `.env.test` pisa encima solo las cuatro
+variables de la base. Una **traba corta los tests** si ese archivo falta o
+apunta al mismo proyecto que el `.env`.
 
-⚠️ **Falta un paso, y hasta que se dé, los tests no corren**: crear
-`.env.test` con las credenciales de `infowell-dev` y ejecutar
-`npm run db:preparar:dev`. Ver §10 y DEPLOY.md.
+`npm run db:donde` dice dónde está parado cada archivo sin mostrar contraseñas.
+La base de desarrollo ya tiene las seis migraciones, el seed, los dos buckets
+privados y los datos de demostración.
 
 ### Verificación en verde al cierre
 
@@ -82,12 +87,17 @@ toca, `.env.test` pisa encima solo las cuatro variables de la base, y hay una
 tsc              0 errores
 eslint           0 errores
 vitest           163 tests unitarios
-playwright       302 tests e2e (contra Supabase real, 2 viewports)
+playwright       300 pasan, 2 salteados, 2 por contención (ver abajo)  — 18,9 min
 build sin .env   compila
 ```
 
 Los e2e son 152 declarados × 2 viewports, menos los que se saltean a propósito
 (los que tocan ajustes globales corren en un solo proyecto — ver §9).
+
+Los dos que fallaron son `dibujos.spec.ts:360` y `configuracion.spec.ts:87`,
+los dos por `toBeVisible` agotando el tiempo —nunca por una aserción que diera
+un valor distinto—. Corridos solos con `--workers=1` pasan los dos. Es
+contención del plan gratuito, no una regresión; §9 explica cómo se distingue.
 
 ---
 
@@ -409,6 +419,12 @@ puede tener memorizado.
 - Se limpian espacios, saltos de línea y comillas al leerlas: copiar y pegar en
   un panel web arrastra basura invisible. **Un deploy se rompió porque la URL
   terminaba en `supabase.c` en vez de `supabase.co`.**
+- **`NEXT_PUBLIC_SUPABASE_URL` va pelada**, terminando en `.supabase.co`. El
+  panel de Supabase la muestra en varios lugares con un camino pegado
+  —`…supabase.co/rest/v1/`— y esa variante entra sin quejarse: el cliente le
+  concatena `/storage/v1/…` y la API contesta `Invalid path specified in
+  request URL`, que no menciona la URL ni el bucket. Pasó al armar la base de
+  desarrollo: parecía que faltaban los buckets, y los buckets estaban.
 - `/api/diagnostico` (solo admin) reporta la **forma** de cada variable
   —espacios, comillas, saltos, protocolo— y prueba la conexión real. Un
   booleano "presente: true" no alcanza: la variable estaba presente y rota.
@@ -504,6 +520,19 @@ el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 - `shadcn` v4 **reemplazó el componente `form` por `field`**; `CardTitle`
   renderiza un `div`, no un heading.
 
+**Un timeout que rota entre corridas es contención, no un bug.** Con 4 workers
+contra la base gratuita, uno o dos tests caen por `toBeVisible` agotando el
+tiempo, y no son los mismos la corrida siguiente. La forma de saberlo, antes de
+salir a buscar la causa en el código:
+
+```bash
+npx playwright test archivo.spec.ts:LINEA --workers=1
+```
+
+Si pasa solo, era el banco. Si vuelve a fallar, ahí sí hay algo. Lo que **no**
+es contención: una aserción que devuelve un valor distinto del esperado —eso
+falla igual con un worker que con ocho—.
+
 ### Supabase plan gratuito
 
 - **Pausa los proyectos tras una semana sin uso.** El primer pedido después
@@ -516,25 +545,15 @@ el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 
 ## 10. Pendientes
 
-### Lo primero: terminar de separar las bases
+### Las bases ya están separadas
 
-Es lo único que bloquea trabajar. **Los tests no corren hasta que esté hecho**:
-cortan solos antes de tocar nada.
+Era lo único que bloqueaba trabajar, y está hecho: `.env.test` apunta a
+`infowell-dev`, con las seis migraciones, el seed, los dos buckets privados y
+los datos de demostración. Los tests corren.
 
-El usuario ya creó el proyecto `infowell-dev`. Falta:
-
-1. Crear **`.env.test`** en la raíz con las cuatro variables de ese proyecto:
-   `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_SUPABASE_URL` y
-   `SUPABASE_SERVICE_ROLE_KEY`. De dónde sale cada una: DEPLOY.md.
-2. Los dos buckets privados en el proyecto nuevo: `remitos` y `notas-voz`.
-3. `npm run db:preparar:dev` — migraciones, seed y datos de demostración.
-
-**El `.env` no se toca**: es producción, y es lo mismo que hay en Vercel.
-`npm run db:donde` muestra dónde está parado cada archivo.
-
-Cuando estén separadas, **ahí sí** conviene mover `prisma migrate deploy` al
-build de producción. Hoy está afuera a propósito: con una sola base, cada
-deploy de preview migraría los datos del cliente.
+Queda una consecuencia pendiente: **mover `prisma migrate deploy` al build de
+producción**. Hoy está afuera a propósito —con una sola base, cada deploy de
+preview migraba los datos del cliente—, y esa razón ya no existe.
 
 ### Lo que puede hacerse sin el usuario
 

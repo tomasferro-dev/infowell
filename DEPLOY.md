@@ -25,8 +25,14 @@ Ninguna se llama igual en Supabase que acá. Estos son los nombres reales:
 | --- | --- | --- |
 | `DATABASE_URL` | Project Settings → **Database** → Connection string → **Transaction pooler** | La que termina en `:6543/postgres?pgbouncer=true` |
 | `DIRECT_URL` | Misma pantalla → **Session pooler** | La misma pero en `:5432/postgres`, sin `pgbouncer` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Project Settings → **API** → Project URL | `https://<ref>.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Project Settings → **API** → Project URL | `https://<ref>.supabase.co`, **sin nada detrás** |
 | `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → **API Keys** | La **secret**, la que empieza con `sb_secret_` |
+
+⚠️ **La Project URL va pelada.** El panel la muestra en varios lugares con
+un camino pegado —`…supabase.co/rest/v1/` en la sección de REST— y esa
+variante entra sin quejarse: falla después, al usar Storage, con un
+`Invalid path specified in request URL` que no menciona la URL. Tiene que
+terminar en `.supabase.co`.
 
 En las dos primeras, `[YOUR-PASSWORD]` hay que reemplazarlo por la contraseña
 de la base —la que se eligió al crear el proyecto—. Si se perdió, se cambia en
@@ -179,6 +185,8 @@ y migrar datos, sin ninguna ventaja.
    parezcan.
 2. **Dos buckets privados**, con estos nombres exactos: `remitos` y
    `notas-voz`. Los nombres están fijos en `src/lib/storage-paths.ts`.
+   También los crea `npm run db:buckets:dev`, que es parte de
+   `db:preparar:dev` y no pisa nada si ya existen.
 3. **Pasarle al desarrollador** cuatro valores del proyecto nuevo:
    `DATABASE_URL` (pooler, puerto 6543), `DIRECT_URL` (directa, puerto 5432),
    `NEXT_PUBLIC_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
@@ -213,8 +221,12 @@ hasta el día que uno se olvida de volver atrás y corre trescientos tests
 npm run db:preparar:dev
 ```
 
-Corre las migraciones, el seed y los datos de demostración contra `.env.test`.
-También están sueltos: `db:deploy:dev`, `db:seed:dev`, `db:demo:dev`.
+Corre las migraciones, el seed, los buckets y los datos de demostración contra
+`.env.test`. También están sueltos: `db:deploy:dev`, `db:seed:dev`,
+`db:buckets:dev`, `db:demo:dev`.
+
+Los buckets van antes que los datos de demostración a propósito: esos datos
+suben fotos de remitos, y sin bucket cortan a la mitad.
 
 ### La traba
 
