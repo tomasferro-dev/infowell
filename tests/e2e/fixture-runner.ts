@@ -187,6 +187,15 @@ async function teardown(marca: string) {
   // pozos, remitos e intervenciones — y recién después los usuarios.
   await prisma.farm.deleteMany({ where: { name: { contains: marca } } })
   await prisma.user.deleteMany({ where: { email: { contains: marca } } })
+
+  // Los dibujos SUELTOS no cuelgan de ninguna finca, así que la cascada no los
+  // alcanza: se borran por su nombre, que lleva la marca de la corrida. Sin
+  // esto quedaban para siempre, y el administrador se los encontraba en el
+  // mapa — pasó: treinta referencias de prueba desperdigadas.
+  await prisma.mapAnnotation.deleteMany({
+    where: { farmId: null, label: { contains: marca } },
+  })
+
   return { ok: true }
 }
 
@@ -240,7 +249,14 @@ async function archivarFinca(marca: string) {
  */
 async function borrarDibujos(marca: string) {
   const { count } = await prisma.mapAnnotation.deleteMany({
-    where: { farm: { name: { contains: marca } } },
+    where: {
+      OR: [
+        { farm: { name: { contains: marca } } },
+        // Los sueltos no tienen finca de la cual colgar: se los ubica por su
+        // nombre, que lleva la marca de la corrida.
+        { farmId: null, label: { contains: marca } },
+      ],
+    },
   })
 
   return { borrados: count }

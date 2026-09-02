@@ -413,6 +413,12 @@ paralelo: «el primer dibujo» puede ser el de otro worker. Se busca por nombre 
 por `data-id`, nunca por posición en la lista. Pasó tres veces antes de quedar
 escrito.
 
+**Los dibujos SUELTOS no los alcanza ninguna cascada.** No cuelgan de una
+finca, así que borrar la finca de la corrida no se los lleva: hay que borrarlos
+por su nombre, que lleva la marca. Sin eso quedaban para siempre — pasó, y el
+administrador se encontró treinta referencias de prueba desperdigadas por el
+mapa. `scripts/limpiar-pruebas.ts` limpia lo que ya haya quedado.
+
 **Los tests de dibujo empiezan con el mapa limpio** (`borrarDibujos` en un
 `beforeEach`). Todos trabajan sobre la misma finca y tocan las mismas
 coordenadas de pantalla: con los dibujos acumulándose, un test termina tocando
