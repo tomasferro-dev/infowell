@@ -27,12 +27,12 @@ let cliente: SupabaseClient | undefined
 function storage() {
   if (cliente) return cliente
 
-  const url = limpiar(process.env.NEXT_PUBLIC_SUPABASE_URL)?.replace(/\/+$/, '')
+  const url = limpiar(process.env.SUPABASE_URL)?.replace(/\/+$/, '')
   const serviceKey = limpiar(process.env.SUPABASE_SERVICE_ROLE_KEY)
 
   if (!url || !serviceKey) {
     throw new Error(
-      'Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY para usar Storage.',
+      'Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY para usar Storage.',
     )
   }
 

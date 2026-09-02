@@ -24,9 +24,9 @@ import { BUCKET_NOTAS_VOZ, BUCKET_REMITOS } from '../src/lib/storage-paths'
 const BUCKETS = [BUCKET_REMITOS, BUCKET_NOTAS_VOZ]
 
 async function main() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/+$/, '')
+  const url = process.env.SUPABASE_URL?.trim().replace(/\/+$/, '')
   const clave = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-  if (!url || !clave) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY')
+  if (!url || !clave) throw new Error('Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY')
 
   const supabase = createClient(url, clave, { auth: { persistSession: false } })
 

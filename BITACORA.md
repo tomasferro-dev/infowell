@@ -418,7 +418,7 @@ puede tener memorizado.
 - Se limpian espacios, saltos de línea y comillas al leerlas: copiar y pegar en
   un panel web arrastra basura invisible. **Un deploy se rompió porque la URL
   terminaba en `supabase.c` en vez de `supabase.co`.**
-- **`NEXT_PUBLIC_SUPABASE_URL` va pelada**, terminando en `.supabase.co`. El
+- **`SUPABASE_URL` va pelada**, terminando en `.supabase.co`. El
   panel de Supabase la muestra en varios lugares con un camino pegado
   —`…supabase.co/rest/v1/`— y esa variante entra sin quejarse: el cliente le
   concatena `/storage/v1/…` y la API contesta `Invalid path specified in

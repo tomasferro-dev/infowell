@@ -93,7 +93,7 @@ export function verificarSeparacion(produccion: string | null, desarrollo: strin
         '  base de producción. Creá ese archivo con las cuatro variables del\n' +
         '  proyecto de desarrollo (ver DEPLOY.md):\n\n' +
         '    DATABASE_URL, DIRECT_URL,\n' +
-        '    NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY\n\n' +
+        '    SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY\n\n' +
         '  El .env no se toca: ese es producción.\n',
     )
   }

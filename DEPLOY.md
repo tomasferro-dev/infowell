@@ -8,7 +8,7 @@ Cargalas en **Production** y **Preview** (Project Settings → Environment Varia
 | --- | --- |
 | `DATABASE_URL` | Conexión de la app (pooler, puerto **6543**) |
 | `AUTH_SECRET` | Firma de las sesiones |
-| `NEXT_PUBLIC_SUPABASE_URL` | Storage (fotos y audios) |
+| `SUPABASE_URL` | Storage (fotos y audios) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Storage, solo del lado del servidor |
 | `DIRECT_URL` | Conexión directa (puerto **5432**), solo para migrar |
 | `NEXT_PUBLIC_MAPTILER_KEY` | Imagen satelital del mapa |
@@ -16,6 +16,13 @@ Cargalas en **Production** y **Preview** (Project Settings → Environment Varia
 
 Después de agregar o cambiar una variable hay que **volver a deployar**: Vercel
 no reconstruye solo.
+
+⚠️ **`SUPABASE_URL` se llamaba `NEXT_PUBLIC_SUPABASE_URL` y se renombró.** El
+prefijo `NEXT_PUBLIC_` estaba de más: `src/server/storage.ts` es `server-only` y
+ningún componente cliente lee esa variable, así que el prefijo la mandaba al
+bundle del navegador sin que nadie la usara ahí. Además los `NEXT_PUBLIC_`
+quedan **congelados en el build**, con el valor del momento de compilar. Si
+quedó alguna con el nombre viejo dando vueltas, borrala.
 
 ### De dónde sale cada una en el panel de Supabase
 
@@ -25,7 +32,7 @@ Ninguna se llama igual en Supabase que acá. Estos son los nombres reales:
 | --- | --- | --- |
 | `DATABASE_URL` | Project Settings → **Database** → Connection string → **Transaction pooler** | La que termina en `:6543/postgres?pgbouncer=true` |
 | `DIRECT_URL` | Misma pantalla → **Session pooler** | La misma pero en `:5432/postgres`, sin `pgbouncer` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Project Settings → **API** → Project URL | `https://<ref>.supabase.co`, **sin nada detrás** |
+| `SUPABASE_URL` | Project Settings → **API** → Project URL | `https://<ref>.supabase.co`, **sin nada detrás** |
 | `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → **API Keys** | La **secret**, la que empieza con `sb_secret_` |
 
 ⚠️ **La Project URL va pelada.** El panel la muestra en varios lugares con
@@ -216,7 +223,7 @@ datos, sin ninguna ventaja.
    `db:preparar:dev` y no pisa nada si ya existen.
 3. **Pasarle al desarrollador** cuatro valores del proyecto nuevo:
    `DATABASE_URL` (pooler, puerto 6543), `DIRECT_URL` (directa, puerto 5432),
-   `NEXT_PUBLIC_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
+   `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
 
 ⚠️ **Vercel no se toca.** Sigue apuntando al proyecto de siempre, que pasa a
 ser producción y queda sin tests encima.
@@ -229,7 +236,7 @@ solo esas cuatro líneas:
 ```
 DATABASE_URL=…
 DIRECT_URL=…
-NEXT_PUBLIC_SUPABASE_URL=…
+SUPABASE_URL=…
 SUPABASE_SERVICE_ROLE_KEY=…
 ```
 

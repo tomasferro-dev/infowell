@@ -52,7 +52,7 @@ export async function GET() {
     return NextResponse.json({ error: 'No encontrado' }, { status: 404 })
   }
 
-  const urlCruda = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const urlCruda = process.env.SUPABASE_URL
   const claveCruda = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   // La URL es pública por definición (NEXT_PUBLIC_): se muestra entera, que es
@@ -130,7 +130,7 @@ export async function GET() {
     variables: {
       DATABASE_URL: !!process.env.DATABASE_URL,
       AUTH_SECRET: !!process.env.AUTH_SECRET,
-      NEXT_PUBLIC_SUPABASE_URL: url,
+      SUPABASE_URL: url,
       SUPABASE_SERVICE_ROLE_KEY: clave,
     },
     conexion,

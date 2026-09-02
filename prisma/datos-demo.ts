@@ -505,7 +505,7 @@ async function imagenDeRemito(numero: string, monto: string, fecha: string): Pro
 
 /** Sube un archivo a Storage con la clave de servicio. */
 async function subirAStorage(bucket: string, ruta: string, contenido: Buffer) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/+$/, '')
+  const url = process.env.SUPABASE_URL?.trim().replace(/\/+$/, '')
   const clave = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
   if (!url || !clave) throw new Error('Faltan las variables de Supabase Storage')
 
