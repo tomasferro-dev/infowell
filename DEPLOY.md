@@ -99,31 +99,52 @@ y `src/server/db.ts` no lanza en el cuerpo del módulo.
 **Si agregás un módulo que lea `process.env`, no valides en el cuerpo del
 módulo: validá adentro de la función que lo usa.**
 
-## Las migraciones NO corren en el build
+## Las migraciones corren en el build, y solo en produccion
 
-El build es `prisma generate && next build`. A propósito **no** incluye
-`prisma migrate deploy`.
+El build es:
 
-La razón: hoy hay un solo proyecto de Supabase, así que Preview y Production
-apuntan a la misma base. Si el build migrara, **cada deploy de preview
-—cualquier rama, cualquier PR— correría migraciones contra los datos reales**.
-
-Las migraciones se aplican a mano, desde tu máquina, cuando cambia el esquema:
-
-```bash
-npm run db:deploy
+```
+preparar-worker-mapa && prisma generate && migrar-en-build && next build
 ```
 
-Ese comando usa `DIRECT_URL` de tu `.env` local. Corrélo **antes** de deployar
-el código que depende del esquema nuevo, para que la base nunca quede atrás de
-la aplicación.
+`scripts/migrar-en-build.ts` corre `prisma migrate deploy` **unicamente si
+`VERCEL_ENV` vale `production`**. Asi el deploy de Production migra su propia
+base y el esquema nunca queda atras de la aplicacion, sin que haya que
+acordarse de aplicarlo a mano antes de cada deploy.
 
-### Cuándo conviene cambiar esto
+### Por que la guarda, y por que no alcanza con tener dos proyectos
 
-Si más adelante separás producción y desarrollo en dos proyectos de Supabase,
-ahí sí tiene sentido que el build de Production corra `prisma migrate deploy`,
-porque cada entorno migra su propia base. Mientras haya una sola, se queda como
-está.
+Las variables de entorno de este proyecto estan cargadas en Vercel para
+**Production y Preview** (ver la tabla del principio). Eso significa que **un
+deploy de preview apunta a la base del cliente**: separar produccion y
+desarrollo en dos proyectos de Supabase separo la maquina de uno, no los
+previews de Vercel.
+
+Sin la guarda, cualquier rama con un `schema.prisma` a medio hacer le migraria
+el esquema a los datos reales al abrir un PR. Con la guarda, un preview
+imprime que se saltea y sigue de largo.
+
+Si alguna vez se quiere que los previews tengan su propia base, hay que
+cargarles en Vercel las variables de `infowell-dev` **para el entorno Preview**
+—el panel permite un valor distinto por entorno—. Hasta que eso pase, un
+preview lee y escribe los datos del cliente en tiempo de ejecucion, que es algo
+que la guarda de migraciones no cubre.
+
+### A mano, cuando hace falta
+
+Sigue estando `npm run db:deploy`, que usa el `DIRECT_URL` del `.env` local y
+aplica las migraciones a produccion desde tu maquina. Ya no es obligatorio
+antes de cada deploy, pero sirve para aplicar un cambio de esquema sin esperar
+al build.
+
+Contra la base de desarrollo, `npm run db:deploy:dev`.
+
+### Si la migracion falla
+
+El build corta con el codigo de error de Prisma y **la version no se publica**.
+Es a proposito: publicar la aplicacion con la base atras del codigo es peor que
+no publicarla, porque falla en la cara del usuario y no en el registro del
+deploy.
 
 ## Dominio propio (DonWeb)
 
@@ -163,22 +184,28 @@ E2E_BASE_URL=https://tu-app.vercel.app npx playwright test --project=mobile
 ```
 
 ⚠️ Los tests **crean y borran datos** (fincas, pozos, usuarios y remitos con el
-prefijo `e2e-`). Mientras Preview y Production compartan base, no los corras
-contra producción si ya hay datos reales cargados.
+prefijo `e2e-`). **Nunca los corras contra la URL de producción**: `E2E_BASE_URL`
+saltea la traba de separación a propósito —contra una URL externa no hay `.env`
+local que valga—, así que ahí la única proteccion sos vos. Ya pasó una vez:
+quedaron cuatro fincas de prueba a la vista del cliente.
 
 ---
 
 ## Separar la base de desarrollo de la de producción
 
-Hoy hay **una sola base** de Supabase: la usa la app publicada, tu desarrollo
-local y los 290 tests, que crean y borran datos en cada corrida. Mientras no
-hubo datos reales no importó. **Con el cliente cargando sus fincas, sí.**
+✅ **Ya está hecho.** Producción es `erdpbfcidqxfcxahnwjp` y desarrollo es
+`nqlfszunnqbqfeulpugc` (`infowell-dev`). Queda escrito porque explica cómo está
+armado y qué repetir si alguna vez hay que rehacer la base de desarrollo.
 
-Lo que hay que hacer es crear una base NUEVA para desarrollo y dejar la actual
-como producción. Al revés —mudar producción— sería cambiar variables en Vercel
-y migrar datos, sin ninguna ventaja.
+El motivo fue que una sola base la usaban la app publicada, el desarrollo local
+y los 300 tests, que crean y borran datos en cada corrida. Mientras no hubo
+datos reales no importó; con el cliente cargando sus fincas, sí.
 
-### Lo que hace el usuario (una vez)
+Se creó una base NUEVA para desarrollo y la de siempre quedó como producción.
+Al revés —mudar producción— habría sido cambiar variables en Vercel y migrar
+datos, sin ninguna ventaja.
+
+### Lo que hizo el usuario (una vez)
 
 1. **Nuevo proyecto en Supabase.** Nombre sugerido: `infowell-dev`. La región
    no importa; conviene la misma que el de producción para que los tiempos se

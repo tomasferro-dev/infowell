@@ -550,9 +550,19 @@ Era lo único que bloqueaba trabajar, y está hecho: `.env.test` apunta a
 `infowell-dev`, con las seis migraciones, el seed, los dos buckets privados y
 los datos de demostración. Los tests corren.
 
-Queda una consecuencia pendiente: **mover `prisma migrate deploy` al build de
-producción**. Hoy está afuera a propósito —con una sola base, cada deploy de
-preview migraba los datos del cliente—, y esa razón ya no existe.
+El build de producción ya aplica las migraciones
+(`scripts/migrar-en-build.ts`), así que el esquema no queda atrás del código sin
+que nadie se acuerde de aplicarlo. Corre **solo con `VERCEL_ENV=production`**.
+
+⚠️ **Esa guarda es la pieza importante, no un detalle.** En el panel de Vercel
+las variables están cargadas para Production **y Preview**, así que un deploy de
+preview apunta a la base del cliente: separar las bases locales no separó los
+previews. Sin la guarda, cualquier rama con un `schema.prisma` a medio hacer le
+migraría el esquema a los datos reales.
+
+Queda algo que la guarda **no** cubre: un preview sigue leyendo y escribiendo
+los datos del cliente en tiempo de ejecución. Para cerrarlo hay que cargar en
+Vercel las variables de `infowell-dev` para el entorno Preview —ver §10—.
 
 ### Lo que puede hacerse sin el usuario
 
@@ -569,6 +579,7 @@ preview migraba los datos del cliente—, y esa razón ya no existe.
 | Pendiente | Qué tiene que hacer |
 |---|---|
 | **Cargar las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos de demostración ya vienen ubicados; las fincas de verdad hay que salir a marcarlas. |
+| **Preview de Vercel con su propia base** | Los previews usan hoy las variables de producción, así que leen y escriben los datos del cliente. En Vercel se puede dar un valor distinto por entorno: cargar las cuatro variables de `infowell-dev` para **Preview**. Las migraciones ya están cubiertas por la guarda del build; esto es el resto. |
 | **Dominio propio (DonWeb)** | Comprarlo. Después: agregarlo en Vercel y copiar los registros DNS **que muestre el panel** (no los de un tutorial: las IP cambiaron). No hace falta para nada — la URL `.vercel.app` ya tiene HTTPS, que es lo único que exigen cámara y micrófono. |
 | **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md: sin esa lista, la clave sirve desde cualquier sitio y un tercero puede gastar la cuota. |
 | **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está; el botón aparece solo. ⚠️ Antes hay que agregar un filtro para que solo entren emails ya dados de alta. |

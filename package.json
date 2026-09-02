@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/preparar-worker-mapa.mjs && next dev",
-    "build": "node scripts/preparar-worker-mapa.mjs && prisma generate && next build",
+    "build": "node scripts/preparar-worker-mapa.mjs && prisma generate && tsx scripts/migrar-en-build.ts && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
