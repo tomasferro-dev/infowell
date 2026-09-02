@@ -280,3 +280,32 @@
 .marcador-mapa[data-oculto='true'] {
   display: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Agarraderas para correr los puntos de un dibujo.
+
+   Más grandes que el vértice que se ve mientras se dibuja: acá hay que
+   agarrarlas con el pulgar y arrastrarlas, no solo verlas.
+--------------------------------------------------------------------------- */
+.vertice-mapa {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 3px solid #fff;
+  border-radius: 9999px;
+  background: #111;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.5);
+  cursor: grab;
+  touch-action: none;
+}
+
+.vertice-mapa:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+}
+
+@media (pointer: coarse) {
+  .vertice-mapa {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+}

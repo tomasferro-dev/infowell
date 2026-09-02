@@ -21,11 +21,12 @@ import { Button } from '@/components/ui/button'
 import { limitesDe, MINIMO_DE_PUNTOS, NOMBRE_DE_FORMA, type Punto } from '@/lib/anotaciones'
 import type { AnotacionMapa, MarcadorMapa } from '@/server/queries/farms'
 
-/** Lo que se está dibujando ahora mismo. */
+/** Lo que se está dibujando o reformando ahora mismo. */
 export type Dibujando = {
   forma: AnotacionMapa['forma']
-  /** El rectángulo se guarda como perímetro; cambia cómo se dibuja. */
   puntos: Punto[]
+  /** Si se está reformando uno que ya existe, su id. */
+  id?: string
 }
 
 /**
@@ -186,6 +187,10 @@ export function Mapa({
   verAnotaciones,
   onVerAnotaciones,
   dibujando,
+  moviendo,
+  onMoverVertice,
+  onGuardarForma,
+  onCancelarForma,
   onPuntos,
   onTerminarDibujo,
   onCancelarDibujo,
@@ -224,6 +229,17 @@ export function Mapa({
   verAnotaciones: boolean
   onVerAnotaciones: (ver: boolean) => void
   dibujando?: Dibujando
+  /**
+   * Un dibujo al que se le están corriendo los puntos.
+   *
+   * Es distinto de `dibujando`: ahí se agregan vértices tocando el mapa; acá
+   * se arrastran los que ya están. Reusan la misma capa de borrador, así que
+   * nunca pueden estar los dos a la vez.
+   */
+  moviendo?: Dibujando
+  onMoverVertice?: (indice: number, punto: Punto) => void
+  onGuardarForma?: () => void
+  onCancelarForma?: () => void
   onPuntos: (puntos: Punto[]) => void
   onTerminarDibujo: () => void
   onCancelarDibujo: () => void
@@ -241,6 +257,11 @@ export function Mapa({
   // asignación va en su propio efecto porque escribir un ref durante el
   // render deja al compilador de React sin garantías.
   const alTocarDibujo = useRef(onTocarDibujo)
+  const alMoverVertice = useRef(onMoverVertice)
+  // Las posiciones al momento de crear las agarraderas. Van por ref para que
+  // el efecto no dependa de ellas y no se recreen durante el arrastre.
+  const verticesActuales = useRef<Punto[]>([])
+  const moviendoActual = useRef(moviendo)
   const alSeleccionar = useRef(onSeleccion)
   const alDibujar = useRef(onPuntos)
   const dibujoActual = useRef(dibujando)
@@ -249,6 +270,9 @@ export function Mapa({
   useEffect(() => {
     alSeleccionar.current = onSeleccion
     alTocarDibujo.current = onTocarDibujo
+    alMoverVertice.current = onMoverVertice
+    verticesActuales.current = moviendo?.puntos ?? []
+    moviendoActual.current = moviendo
     alDibujar.current = onPuntos
     dibujoActual.current = dibujando
     anotacionesActuales.current = anotaciones
@@ -294,6 +318,10 @@ export function Mapa({
     // Tocar la imagen (no un marcador) cierra la ficha abierta — salvo
     // mientras se dibuja, donde cada toque agrega un vértice.
     m.on('click', (evento) => {
+      // Mientras se corren los puntos, el mapa no escucha: cada toque sería
+      // abrir otra cosa en medio del arrastre.
+      if (moviendoActual.current) return
+
       const d = dibujoActual.current
 
       if (d) {
@@ -439,15 +467,61 @@ export function Mapa({
     actualizarFuente(mapa, FUENTE, aGeoJson(anotaciones))
   }, [mapa, capasListas, anotaciones])
 
-  /* El dibujo en curso, que se redibuja con cada toque. */
+  /* El dibujo en curso, que se redibuja con cada toque o cada arrastre. */
   useEffect(() => {
     if (!mapa || !capasListas) return
+
+    const enCurso = dibujando ?? moviendo
     actualizarFuente(
       mapa,
       FUENTE_BORRADOR,
-      borradorAGeoJson(dibujando?.forma ?? 'LINEA', dibujando?.puntos ?? []),
+      borradorAGeoJson(enCurso?.forma ?? 'LINEA', enCurso?.puntos ?? []),
     )
-  }, [mapa, capasListas, dibujando])
+  }, [mapa, capasListas, dibujando, moviendo])
+
+  /**
+   * Las agarraderas para correr cada punto.
+   *
+   * Son marcadores arrastrables de MapLibre: la misma maquinaria que los
+   * pines, que ya sabe seguir el dedo y convertir a coordenadas.
+   *
+   * El efecto NO depende de las posiciones, solo de cuántas hay y de qué
+   * dibujo: si se recrearan en cada cuadro del arrastre, el marcador
+   * desaparecería debajo del dedo a mitad del gesto.
+   */
+  const cuantosVertices = moviendo?.puntos.length ?? 0
+
+  useEffect(() => {
+    if (!mapa || cuantosVertices === 0) return
+
+    const puntos = verticesActuales.current
+    const puestos = puntos.map((punto, i) => {
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.className = 'vertice-mapa'
+      el.dataset.vertice = String(i)
+      el.setAttribute('aria-label', `Punto ${i + 1}`)
+
+      const marcador = new maplibregl.Marker({ element: el, draggable: true })
+        .setLngLat(punto)
+        .addTo(mapa)
+
+      // Se avisa durante el arrastre y no solo al soltar: la forma tiene que
+      // seguir al dedo, o no se ve qué se está por dejar.
+      const avisar = () => {
+        const { lng, lat } = marcador.getLngLat()
+        alMoverVertice.current?.(i, [lng, lat])
+      }
+      marcador.on('drag', avisar)
+      marcador.on('dragend', avisar)
+
+      return marcador
+    })
+
+    return () => {
+      for (const m of puestos) m.remove()
+    }
+  }, [mapa, moviendo?.id, cuantosVertices])
 
   /* Apagar los dibujos cuando son demasiados. */
   useEffect(() => {
@@ -641,7 +715,7 @@ export function Mapa({
       {/* Las dos acciones del mapa, juntas y a la derecha. Abajo a la
           izquierda vive el aviso de lo que falta ubicar, y separarlas evita
           que se encimen en una pantalla angosta. */}
-      {!dibujando && !colocando ? (
+      {!dibujando && !colocando && !moviendo ? (
         <div className="pointer-events-none absolute right-3 bottom-3 z-20 flex gap-2">
           {/* Una referencia que no es de nadie: la entrada de un callejón, un
               cruce. No hace falta pasar por una finca — muchas veces la
@@ -678,9 +752,48 @@ export function Mapa({
         </div>
       ) : null}
 
+      {moviendo ? (
+        <>
+          {/* El margen derecho le deja lugar a los controles de zoom, que
+              viven en esa esquina: a lo ancho completo, el cartel los tapaba. */}
+          <div className="pointer-events-none absolute top-16 right-16 left-3 z-20">
+            <p className="bg-card/95 rounded-md border px-3 py-2 text-center text-sm shadow-md backdrop-blur">
+              Arrastrá cada punto a donde va.
+              <span className="text-muted-foreground block text-xs">
+                {NOMBRE_DE_FORMA[moviendo.forma]} · {moviendo.puntos.length}{' '}
+                {moviendo.puntos.length === 1 ? 'punto' : 'puntos'}
+              </span>
+            </p>
+          </div>
+
+          <div
+            data-moviendo="true"
+            data-moviendo-puntos={moviendo.puntos.length}
+            className="bg-card/95 pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex gap-2 border-t p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] backdrop-blur"
+          >
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 flex-1"
+              onClick={onCancelarForma}
+            >
+              <X className="size-4" />
+              Cancelar
+            </Button>
+
+            <Button type="button" className="h-12 flex-1" onClick={onGuardarForma}>
+              <Check className="size-4" />
+              Guardar
+            </Button>
+          </div>
+        </>
+      ) : null}
+
       {dibujando ? (
         <>
-          <div className="pointer-events-none absolute inset-x-3 top-16 z-20">
+          {/* El margen derecho le deja lugar a los controles de zoom, que
+              viven en esa esquina: a lo ancho completo, el cartel los tapaba. */}
+          <div className="pointer-events-none absolute top-16 right-16 left-3 z-20">
             <p className="bg-card/95 rounded-md border px-3 py-2 text-center text-sm shadow-md backdrop-blur">
               {`Tocá el mapa para marcar ${
                 dibujando.forma === 'PUNTO' ? 'la referencia' : 'cada punto'
@@ -742,7 +855,9 @@ export function Mapa({
           </div>
 
           {/* Debajo del botón «Volver», que vive en la misma esquina. */}
-          <div className="pointer-events-none absolute inset-x-3 top-16 z-20">
+          {/* El margen derecho le deja lugar a los controles de zoom, que
+              viven en esa esquina: a lo ancho completo, el cartel los tapaba. */}
+          <div className="pointer-events-none absolute top-16 right-16 left-3 z-20">
             <p className="bg-card/95 rounded-md border px-3 py-2 text-center text-sm shadow-md backdrop-blur">
               Movés el mapa hasta poner la mira sobre {colocando.quePunto}.
             </p>

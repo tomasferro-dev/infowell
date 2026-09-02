@@ -53,7 +53,7 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 tsc          0 errores
 eslint       0 errores
 vitest       147 tests
-playwright   286 tests e2e (contra Supabase real, 2 viewports)
+playwright   290 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -406,6 +406,12 @@ reintenta el click y lo dice en su comentario; aun así se cayó en la trampa al
 escribir un helper que reintentaba *agregar un vértice*, y cada reintento
 sumaba un punto de más que deformaba la figura. El síntoma aparecía mucho
 después, al tocar el dibujo donde ya no estaba.
+
+**Ninguna aserción sobre el mapa por índice.** El administrador ve los dibujos
+y los puntos de TODAS las fincas, incluidas las de las corridas que van en
+paralelo: «el primer dibujo» puede ser el de otro worker. Se busca por nombre o
+por `data-id`, nunca por posición en la lista. Pasó tres veces antes de quedar
+escrito.
 
 **Los tests de dibujo empiezan con el mapa limpio** (`borrarDibujos` en un
 `beforeEach`). Todos trabajan sobre la misma finca y tocan las mismas
@@ -845,9 +851,28 @@ El panel lleva `key={id}`: sus campos se inicializan al montar, así que sin eso
 tocar otro dibujo con el panel abierto mostraba —y guardaba— el nombre del
 anterior.
 
-**No se pueden mover vértices.** Es bastante más trabajo que todo el resto y
-redibujar un perímetro son cuatro toques. Queda pendiente si alguna vez se
-extraña.
+### Correr los puntos de un dibujo
+
+Desde el panel de un dibujo ya hecho, «Mover los puntos» cierra el panel y
+deja el mapa entero con una **agarradera por vértice**. Se arrastran, la forma
+sigue al dedo, y Guardar o Cancelar cierran el modo. Cancelar devuelve el
+dibujo a donde estaba: lo que se arrastra es una copia en memoria, y a la base
+no llega nada hasta guardar.
+
+Las agarraderas son **marcadores arrastrables de MapLibre**: la misma
+maquinaria que los pines, que ya sabe seguir el dedo y convertir a coordenadas.
+Miden 24-28 px, bastante más que el vértice que se ve mientras se dibuja —
+acá hay que agarrarlas, no solo verlas.
+
+⚠️ **El efecto que las crea NO depende de las posiciones**, solo de cuántas hay
+y de qué dibujo. Si dependiera de las coordenadas, cada cuadro del arrastre
+recrearía el marcador y este desaparecería debajo del dedo a mitad del gesto.
+Las posiciones entran por un ref.
+
+Mientras se corren los puntos, el mapa deja de escuchar toques y los
+marcadores no abren su ficha: cada toque sería abrir otra cosa en medio del
+arrastre. Comparte la capa de borrador con el modo de dibujo, así que los dos
+nunca pueden estar activos a la vez.
 
 ### De qué cuelga un dibujo
 

@@ -556,3 +556,150 @@ test.describe('de qué cuelga cada dibujo', () => {
     await expect(page.getByRole('button', { name: 'Referencia' })).toHaveCount(0)
   })
 })
+
+test.describe('correr los puntos de un dibujo', () => {
+  test('se arrastra un vértice y la forma queda donde se lo dejó', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await abrirHerramientas(page)
+
+    const barra = await herramienta(page, /Perímetro/)
+    await expect(page.locator('[data-vaul-drawer]')).toHaveCount(0)
+
+    const contador = page.locator('[data-contador-dibujo="true"]')
+    for (const [i, [x, y]] of ([[0.3, 0.25], [0.7, 0.25], [0.7, 0.5]] as const).entries()) {
+      await tocarMapa(page, x, y)
+      await expect(contador).toContainText(`${i + 1} punto`)
+    }
+    await barra.getByRole('button', { name: 'Listo' }).click()
+
+    const panel = page.locator('[data-panel-dibujo="true"]')
+    await escribir(panel.getByLabel('Nombre'), `Perímetro a corregir ${marca}`)
+    await panel.getByRole('button', { name: 'Guardar' }).click()
+    await expect(panel).toHaveCount(0, { timeout: 20_000 })
+    await expect.poll(() => enElMapa(page), { timeout: 20_000 }).toBeGreaterThan(0)
+
+    /**
+     * Dónde está cada vértice de ESTE dibujo, redondeado.
+     *
+     * Se busca por nombre y no por índice: el administrador ve los dibujos de
+     * TODAS las fincas, incluidas las de las corridas que van en paralelo, así
+     * que «el primero» puede ser el de otro y el test falla por algo que no
+     * tiene que ver con lo que estaba probando.
+     */
+    const vertices = (etiqueta: string) =>
+      page.evaluate((buscada) => {
+        const m = (
+          window as unknown as {
+            __mapa?: {
+              querySourceFeatures(f: string): {
+                geometry: GeoJSON.Geometry
+                properties?: Record<string, unknown>
+              }[]
+            }
+          }
+        ).__mapa
+        if (!m) return []
+
+        const f = m
+          .querySourceFeatures('anotaciones')
+          .find((x) => x.properties?.etiqueta === buscada)
+        if (!f || f.geometry.type !== 'Polygon') return []
+
+        return f.geometry.coordinates[0]!.map(([lon, lat]) => `${lon.toFixed(4)},${lat.toFixed(4)}`)
+      }, etiqueta)
+
+    const nombre = `Perímetro a corregir ${marca}`
+    const antes = await vertices(nombre)
+    expect(antes.length).toBeGreaterThan(0)
+
+    // Se abre para corregir la forma: el borde derecho, lejos de los pines.
+    await tocarMapa(page, 0.7, 0.4)
+    await expect(panel).toBeVisible()
+    await esperarQuieto(panel)
+    await panel.getByRole('button', { name: /Mover los puntos/ }).click()
+
+    // El panel se va y aparecen las agarraderas, una por vértice.
+    await expect(panel).toHaveCount(0)
+    const agarraderas = page.locator('.vertice-mapa')
+    await expect(agarraderas).toHaveCount(3)
+
+    // Se arrastra la primera a otro lado.
+    const caja = (await agarraderas.first().boundingBox())!
+    await page.mouse.move(caja.x + caja.width / 2, caja.y + caja.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(caja.x + caja.width / 2 - 90, caja.y + caja.height / 2 + 60, {
+      steps: 12,
+    })
+    await page.mouse.up()
+    await page.waitForTimeout(400)
+
+    // Mover no agrega ni saca puntos: hay tantas agarraderas como vértices, y
+    // eso es lo que se va a guardar.
+    await expect(page.locator('[data-moviendo="true"]')).toHaveAttribute(
+      'data-moviendo-puntos',
+      '3',
+    )
+    await page.locator('[data-moviendo="true"]').getByRole('button', { name: 'Guardar' }).click()
+    await expect(page.getByText('Puntos movidos')).toBeVisible({ timeout: 20_000 })
+
+    // Y quedó movido de verdad: no alcanza con que el arrastre se haya visto.
+    await expect.poll(() => vertices(nombre), { timeout: 25_000 }).not.toEqual(antes)
+    await expect.poll(async () => (await vertices(nombre)).length).toBe(antes.length)
+  })
+
+  test('cancelar deja el dibujo como estaba', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await abrirHerramientas(page)
+
+    const barra = await herramienta(page, /Referencia/)
+    await expect(page.locator('[data-vaul-drawer]')).toHaveCount(0)
+    await tocarMapa(page, 0.5, 0.3)
+    await barra.getByRole('button', { name: 'Listo' }).click()
+
+    const panel = page.locator('[data-panel-dibujo="true"]')
+    await escribir(panel.getByLabel('Nombre'), `Referencia intacta ${marca}`)
+    await panel.getByRole('button', { name: 'Guardar' }).click()
+    await expect(panel).toHaveCount(0, { timeout: 20_000 })
+    await expect.poll(() => enElMapa(page), { timeout: 20_000 }).toBeGreaterThan(0)
+
+    // Por nombre, no por índice: ver el comentario del test anterior.
+    const donde = (etiqueta: string) =>
+      page.evaluate((buscada) => {
+        const m = (
+          window as unknown as {
+            __mapa?: {
+              querySourceFeatures(f: string): {
+                geometry: GeoJSON.Geometry
+                properties?: Record<string, unknown>
+              }[]
+            }
+          }
+        ).__mapa
+        const f = m
+          ?.querySourceFeatures('anotaciones')
+          .find((x) => x.properties?.etiqueta === buscada)
+        return f && f.geometry.type === 'Point' ? f.geometry.coordinates.join(',') : ''
+      }, etiqueta)
+
+    const nombre = `Referencia intacta ${marca}`
+    const antes = await donde(nombre)
+
+    await tocarMapa(page, 0.5, 0.3)
+    await expect(panel).toBeVisible()
+    await esperarQuieto(panel)
+    await panel.getByRole('button', { name: /Mover el punto/ }).click()
+
+    const agarradera = page.locator('.vertice-mapa').first()
+    const caja = (await agarradera.boundingBox())!
+    await page.mouse.move(caja.x + caja.width / 2, caja.y + caja.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(caja.x + caja.width / 2 + 80, caja.y + caja.height / 2, { steps: 10 })
+    await page.mouse.up()
+
+    // Se arrepiente: el dibujo tiene que volver a donde estaba, no quedarse
+    // donde lo dejó el dedo.
+    await page.locator('[data-moviendo="true"]').getByRole('button', { name: 'Cancelar' }).click()
+    await expect(page.locator('.vertice-mapa')).toHaveCount(0)
+    await expect.poll(() => donde(nombre), { timeout: 15_000 }).toBe(antes)
+  })
+})

@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 import { AvisoSinUbicar, type SinUbicar } from '@/components/mapa/aviso-sin-ubicar'
 import { FichaMapa, TOPES, TOPE_QUE_SIGUE_EL_MAPA } from '@/components/mapa/ficha-mapa'
 import { PanelDibujo, type DatosDibujo } from '@/components/mapa/panel-dibujo'
-import { esClaveColor, type Forma } from '@/lib/anotaciones'
+import { esClaveColor, type ClaveColor, type Forma } from '@/lib/anotaciones'
 import { destinoDeColocacion, type ModoColocacion } from '@/lib/colocacion-mapa'
 import {
   borrarAnotacionAction,
@@ -128,6 +128,16 @@ export function VistaMapa({
   const [encuadrarDibujo, setEncuadrarDibujo] = useState<string>()
 
   /**
+   * El dibujo al que se le están corriendo los puntos.
+   *
+   * Guarda TODO el dibujo, no solo la geometría: al terminar hay que volver a
+   * guardarlo entero, y el nombre y el color tienen que llegar intactos.
+   */
+  const [moviendo, setMoviendo] = useState<
+    (Dibujando & { etiqueta: string; notas: string; color: ClaveColor; pintado: boolean }) | undefined
+  >()
+
+  /**
    * Devuelve la app a los lectores de pantalla al cerrar una ficha.
    *
    * vaul se apoya en Radix, que mientras hay una ficha abierta marca el resto
@@ -209,6 +219,41 @@ export function VistaMapa({
         verAnotaciones={verAnotaciones}
         onVerAnotaciones={setVerAnotaciones}
         dibujando={dibujando}
+        moviendo={moviendo}
+        onMoverVertice={(indice, punto) =>
+          setMoviendo((actual) =>
+            actual
+              ? { ...actual, puntos: actual.puntos.map((p, i) => (i === indice ? punto : p)) }
+              : actual,
+          )
+        }
+        onCancelarForma={() => setMoviendo(undefined)}
+        onGuardarForma={async () => {
+          if (!moviendo) return
+
+          setGuardando(true)
+          const r = await guardarAnotacionAction({
+            id: moviendo.id,
+            farmId: moviendo.farmId,
+            wellId: moviendo.wellId,
+            forma: moviendo.forma,
+            puntos: moviendo.puntos,
+            etiqueta: moviendo.etiqueta,
+            notas: moviendo.notas,
+            color: moviendo.color,
+            pintado: moviendo.pintado,
+          })
+          setGuardando(false)
+
+          if (!r.ok) {
+            toast.error(r.error)
+            return
+          }
+
+          setMoviendo(undefined)
+          toast.success('Puntos movidos')
+          router.refresh()
+        }}
         onPuntos={(puntos) => setDibujando((actual) => (actual ? { ...actual, puntos } : actual))}
         onTerminarDibujo={() => {
           if (!dibujando) return
@@ -250,7 +295,7 @@ export function VistaMapa({
 
       {/* Se calla mientras se coloca un punto o se dibuja: son los dos
           momentos en que estorbaría los botones que están abajo. */}
-      {colocando || dibujando ? null : <AvisoSinUbicar registros={sinUbicar} />}
+      {colocando || dibujando || moviendo ? null : <AvisoSinUbicar registros={sinUbicar} />}
 
       {porGuardar ? (
         <PanelDibujo
@@ -283,6 +328,29 @@ export function VistaMapa({
             if (guardando) return
             setPorGuardar(undefined)
           }}
+          onMoverPuntos={
+            porGuardar.id
+              ? () => {
+                  const previa = anotaciones.find((a) => a.id === porGuardar.id)
+                  if (!previa) return
+
+                  // El panel se va: el mapa tiene que quedar entero para
+                  // arrastrar, y los datos vuelven con el dibujo al guardar.
+                  setPorGuardar(undefined)
+                  setMoviendo({
+                    id: previa.id,
+                    farmId: previa.farmId,
+                    wellId: previa.wellId,
+                    forma: previa.forma,
+                    puntos: previa.puntos,
+                    etiqueta: previa.etiqueta ?? '',
+                    notas: previa.notas ?? '',
+                    color: esClaveColor(previa.color) ? previa.color : 'rojo',
+                    pintado: previa.pintado,
+                  })
+                }
+              : undefined
+          }
           onBorrar={
             porGuardar.id
               ? async () => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Loader2, Trash2 } from 'lucide-react'
+import { Check, Loader2, Move, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Drawer } from 'vaul'
 
@@ -38,6 +38,7 @@ export function PanelDibujo({
   onGuardar,
   onCancelar,
   onBorrar,
+  onMoverPuntos,
 }: {
   forma: Forma
   puntos: number
@@ -48,6 +49,8 @@ export function PanelDibujo({
   onGuardar: (datos: DatosDibujo) => void
   onCancelar: () => void
   onBorrar?: () => void
+  /** Pasar a correr los puntos. Solo tiene sentido con un dibujo ya hecho. */
+  onMoverPuntos?: () => void
 }) {
   const [etiqueta, setEtiqueta] = useState(inicial?.etiqueta ?? '')
   const [notas, setNotas] = useState(inicial?.notas ?? '')
@@ -147,6 +150,23 @@ export function PanelDibujo({
                   </span>
                 </span>
               </label>
+            ) : null}
+
+            {/* Corregir la forma, no los datos. Va aparte de Guardar porque
+                es otra cosa: se cierra el panel y se vuelve al mapa. */}
+            {onMoverPuntos ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full justify-start"
+                disabled={guardando}
+                onClick={onMoverPuntos}
+              >
+                <Move className="size-4" />
+                <span className="flex-1 text-left">
+                  {puntos === 1 ? 'Mover el punto' : 'Mover los puntos'}
+                </span>
+              </Button>
             ) : null}
 
             <div className="flex gap-2 pt-1">
