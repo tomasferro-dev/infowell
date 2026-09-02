@@ -216,14 +216,33 @@ export async function puntosDelMapa() {
     },
   })
 
-  // Los dibujos salen del MISMO scope que los marcadores: es la misma
-  // consulta acotada, así que un cliente no recibe los de otra finca.
+  /**
+   * Los dibujos que este actor puede ver.
+   *
+   * Los que cuelgan de una finca salen del MISMO acotamiento que los
+   * marcadores: un cliente no recibe los de otra finca.
+   *
+   * Los SUELTOS —los que no pertenecen a nada, como una referencia en la
+   * ruta— son internos: los ven ADMIN y CARGADOR, nunca un CLIENTE. No es
+   * pudor: al no colgar de ninguna finca quedan fuera de la cadena que
+   * garantiza el aislamiento, y sus nombres podrían delatarle a un cliente
+   * dónde están las fincas de otros.
+   */
+  const vePuntosSueltos = actor.role !== 'CLIENTE'
+
   const dibujos = await prisma.mapAnnotation.findMany({
-    where: { deletedAt: null, farm: { ...scope, deletedAt: null } },
+    where: {
+      deletedAt: null,
+      OR: [
+        { farm: { ...scope, deletedAt: null } },
+        ...(vePuntosSueltos ? [{ farmId: null }] : []),
+      ],
+    },
     orderBy: { createdAt: 'asc' },
     select: {
       id: true,
       farmId: true,
+      wellId: true,
       kind: true,
       label: true,
       notes: true,
@@ -231,11 +250,25 @@ export async function puntosDelMapa() {
       filled: true,
       geometry: true,
       farm: { select: { name: true } },
+      well: { select: { name: true } },
     },
   })
 
-  let pozosSinUbicar = 0
-  let fincasSinUbicar = 0
+  /**
+   * Lo que todavía no está en el mapa, con nombre y con adónde ir a marcarlo.
+   *
+   * Antes esto era un número suelto —«faltan ubicar 2»— y no servía para nada:
+   * el usuario se enteraba del problema pero no de cuál era ni de cómo
+   * arreglarlo. Un aviso que no se puede accionar es ruido.
+   */
+  const sinUbicar: {
+    tipo: 'finca' | 'pozo'
+    id: string
+    nombre: string
+    nombreFinca: string
+    /** La ruta del formulario donde se le pone la ubicación. */
+    donde: string
+  }[] = []
 
   const marcadores = fincas.flatMap((finca) => {
     // Se numeran TODOS los pozos de la finca, incluidos los que no tienen
@@ -245,7 +278,13 @@ export async function puntosDelMapa() {
 
     const pozos = finca.wells.flatMap((pozo) => {
       if (pozo.latitude === null || pozo.longitude === null) {
-        pozosSinUbicar += 1
+        sinUbicar.push({
+          tipo: 'pozo',
+          id: pozo.id,
+          nombre: pozo.name,
+          nombreFinca: finca.name,
+          donde: `/fincas/${finca.id}/pozos/${pozo.id}/editar`,
+        })
         return []
       }
       const lectura = pozo.readings[0]
@@ -260,7 +299,9 @@ export async function puntosDelMapa() {
           detalle: pozo.code,
           nombreFinca: finca.name,
           etiqueta: String(numeros.get(pozo.id) ?? '?'),
-          puedeDibujar: false,
+          // El permiso sale de la finca, igual que para ella: en una finca
+          // grande, «cómo se llega al cabezal» es del pozo y no de la finca.
+          puedeDibujar: authorize(actor, 'write', 'farm', finca.id),
           intervenciones: pozo._count.interventions,
           lat: pozo.latitude.toNumber(),
           lon: pozo.longitude.toNumber(),
@@ -280,7 +321,13 @@ export async function puntosDelMapa() {
     })
 
     if (finca.latitude === null || finca.longitude === null) {
-      fincasSinUbicar += 1
+      sinUbicar.push({
+        tipo: 'finca',
+        id: finca.id,
+        nombre: finca.name,
+        nombreFinca: finca.name,
+        donde: `/fincas/${finca.id}/editar`,
+      })
       return pozos
     }
 
@@ -317,18 +364,38 @@ export async function puntosDelMapa() {
       {
         id: d.id,
         farmId: d.farmId,
-        nombreFinca: d.farm.name,
+        wellId: d.wellId,
+        // A qué pertenece, para poder decirlo al abrirlo.
+        pertenece: d.well?.name ?? d.farm?.name ?? 'Punto suelto',
         forma: d.kind,
         etiqueta: d.label,
         notas: d.notes,
         color: d.color,
         pintado: d.filled,
         puntos: geo.puntos,
+        // Quién puede corregirlo o borrarlo. Se resuelve acá, con el mismo
+        // núcleo de autorización que todo lo demás: la vista solo obedece.
+        // Un dibujo suelto no tiene finca de la cual sacar el permiso: lo
+        // tocan los mismos que lo ven, que ya excluye al cliente.
+        puedeEditar: d.farmId
+          ? authorize(actor, 'write', 'farm', d.farmId)
+          : vePuntosSueltos,
       },
     ]
   })
 
-  return { marcadores, anotaciones, pozosSinUbicar, fincasSinUbicar }
+  // Las fincas primero: ubicar la finca es lo que pone en el mapa a todos sus
+  // pozos de una, así que es por donde conviene empezar.
+  sinUbicar.sort((a, b) => (a.tipo === b.tipo ? 0 : a.tipo === 'finca' ? -1 : 1))
+
+  return {
+    marcadores,
+    anotaciones,
+    sinUbicar,
+    // Si puede marcar referencias que no cuelgan de ninguna finca. Es interno:
+    // el cliente ni las ve. Ver `authz.ts`.
+    puedeMarcarSueltos: authorize(actor, 'write', 'annotation'),
+  }
 }
 
 export type AnotacionMapa = Awaited<ReturnType<typeof puntosDelMapa>>['anotaciones'][number]

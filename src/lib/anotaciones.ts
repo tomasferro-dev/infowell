@@ -112,22 +112,6 @@ export function validarGeometria(forma: Forma, crudo: unknown): GeometriaValida 
   return { ok: true, forma, puntos: puntos as Punto[] }
 }
 
-/**
- * Los cuatro vértices de un rectángulo, a partir de dos esquinas opuestas.
- *
- * El rectángulo no es una forma propia: se guarda como perímetro. Lo que
- * cambia es cómo se dibuja — dos toques en vez de recorrer el contorno—, que
- * es justamente lo que lo hace rápido para marcar una finca a grandes rasgos.
- */
-export function rectangulo(a: Punto, b: Punto): Punto[] {
-  return [
-    [a[0], a[1]],
-    [b[0], a[1]],
-    [b[0], b[1]],
-    [a[0], b[1]],
-  ]
-}
-
 /** Un punto representativo, para poner la etiqueta o encuadrar el dibujo. */
 export function centroDe(puntos: Punto[]): Punto {
   const suma = puntos.reduce<[number, number]>((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0])

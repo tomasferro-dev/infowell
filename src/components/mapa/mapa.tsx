@@ -2,13 +2,14 @@
 
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import { Check, Crosshair, Eye, EyeOff, Undo2, X } from 'lucide-react'
+import { Check, Crosshair, Eye, EyeOff, MapPin, Undo2, X } from 'lucide-react'
 import * as maplibregl from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 
 import {
   actualizarFuente,
   aGeoJson,
+  CAPAS_TOCABLES,
   elevarCapas,
   borradorAGeoJson,
   FUENTE,
@@ -17,14 +18,13 @@ import {
   mostrarDibujos,
 } from '@/components/mapa/capas-dibujo'
 import { Button } from '@/components/ui/button'
-import { MINIMO_DE_PUNTOS, NOMBRE_DE_FORMA, rectangulo, type Punto } from '@/lib/anotaciones'
+import { limitesDe, MINIMO_DE_PUNTOS, NOMBRE_DE_FORMA, type Punto } from '@/lib/anotaciones'
 import type { AnotacionMapa, MarcadorMapa } from '@/server/queries/farms'
 
 /** Lo que se está dibujando ahora mismo. */
 export type Dibujando = {
   forma: AnotacionMapa['forma']
   /** El rectángulo se guarda como perímetro; cambia cómo se dibuja. */
-  rectangulo: boolean
   puntos: Punto[]
 }
 
@@ -173,9 +173,13 @@ export function Mapa({
   marcadores,
   seleccionado,
   onSeleccion,
+  onTocarDibujo,
+  encuadrar,
   colocando,
   onColocar,
   onCancelarColocacion,
+  puedeMarcarSueltos = false,
+  onMarcarSuelto,
   irAMiUbicacion = true,
   altoFicha = 0,
   anotaciones,
@@ -189,6 +193,15 @@ export function Mapa({
   marcadores: MarcadorMapa[]
   seleccionado?: MarcadorMapa
   onSeleccion: (marcador: MarcadorMapa | undefined) => void
+  /** Se tocó un dibujo ya hecho: se abre para corregirlo o borrarlo. */
+  onTocarDibujo: (id: string) => void
+  /**
+   * Un dibujo al que hay que ir, elegido desde la lista de la ficha.
+   *
+   * Se encuadra entero y no se centra en un punto: un perímetro centrado en su
+   * medio puede quedar todo fuera de pantalla si el zoom venía muy cerca.
+   */
+  encuadrar?: Punto[]
   /** Punto desde donde arranca la colocación, o undefined si no está activa. */
   colocando?: { lat: number; lon: number; quePunto: string; sinPunto?: boolean }
   onColocar: (lat: number, lon: number) => void
@@ -202,6 +215,9 @@ export function Mapa({
    * moviéndose sin parar.
    */
   irAMiUbicacion?: boolean
+  /** Si se ofrece marcar una referencia que no cuelga de ninguna finca. */
+  puedeMarcarSueltos?: boolean
+  onMarcarSuelto?: () => void
   /** Fracción de pantalla que tapa la ficha, para descontarla del encuadre. */
   altoFicha?: number
   anotaciones: AnotacionMapa[]
@@ -224,6 +240,7 @@ export function Mapa({
   // cada render del padre destruiría y recrearía el mapa entero. La
   // asignación va en su propio efecto porque escribir un ref durante el
   // render deja al compilador de React sin garantías.
+  const alTocarDibujo = useRef(onTocarDibujo)
   const alSeleccionar = useRef(onSeleccion)
   const alDibujar = useRef(onPuntos)
   const dibujoActual = useRef(dibujando)
@@ -231,6 +248,7 @@ export function Mapa({
   const anotacionesActuales = useRef(anotaciones)
   useEffect(() => {
     alSeleccionar.current = onSeleccion
+    alTocarDibujo.current = onTocarDibujo
     alDibujar.current = onPuntos
     dibujoActual.current = dibujando
     anotacionesActuales.current = anotaciones
@@ -277,22 +295,39 @@ export function Mapa({
     // mientras se dibuja, donde cada toque agrega un vértice.
     m.on('click', (evento) => {
       const d = dibujoActual.current
-      if (!d) {
-        alSeleccionar.current(undefined)
+
+      if (d) {
+        const nuevo: Punto = [evento.lngLat.lng, evento.lngLat.lat]
+        alDibujar.current([...d.puntos, nuevo])
         return
       }
 
-      const nuevo: Punto = [evento.lngLat.lng, evento.lngLat.lat]
+      /*
+       * ¿Se tocó un dibujo?
+       *
+       * Se pregunta antes de cerrar la ficha: si no, tocar un perímetro se
+       * leería como tocar la imagen y no habría forma de abrir un dibujo ya
+       * hecho para corregirlo o borrarlo.
+       *
+       * Se busca en un cuadradito alrededor del dedo y no en el píxel exacto:
+       * una línea mide dos píxeles de ancho y nadie le acierta con el pulgar.
+       */
+      const cerca = 8
+      const caja: [maplibregl.PointLike, maplibregl.PointLike] = [
+        [evento.point.x - cerca, evento.point.y - cerca],
+        [evento.point.x + cerca, evento.point.y + cerca],
+      ]
 
-      if (d.rectangulo) {
-        // Dos toques y listo: es lo que lo hace rápido para marcar una finca
-        // a grandes rasgos. El segundo cierra la figura.
-        const puntos = d.puntos.length === 0 ? [nuevo] : rectangulo(d.puntos[0]!, nuevo)
-        alDibujar.current(puntos)
+      const capas = CAPAS_TOCABLES.filter((capa) => m.getLayer(capa))
+      const tocados = capas.length > 0 ? m.queryRenderedFeatures(caja, { layers: capas }) : []
+      const id = tocados[0]?.properties?.id
+
+      if (typeof id === 'string') {
+        alTocarDibujo.current(id)
         return
       }
 
-      alDibujar.current([...d.puntos, nuevo])
+      alSeleccionar.current(undefined)
     })
 
     /*
@@ -366,7 +401,7 @@ export function Mapa({
    * Solo la primera vez. Si hay una vista guardada o se pidió un punto
    * concreto, pisarlas sería justamente lo que se quiere evitar.
    */
-  const [encuadrar] = useState(() => leerVista() === undefined)
+  const [encuadreInicial] = useState(() => leerVista() === undefined)
   // Una sola vez, de verdad. La lista de marcadores cambia de identidad con
   // cada refresco del servidor —al guardar un dibujo, por ejemplo— y sin esto
   // el mapa reencuadraba y le tiraba la vista al usuario cada vez.
@@ -382,7 +417,7 @@ export function Mapa({
     // servidor —guardar un dibujo, por ejemplo— el mapa se iba al mazo.
     yaEncuadro.current = true
 
-    if (!encuadrar || seleccionado || marcadores.length === 0) return
+    if (!encuadreInicial || seleccionado || marcadores.length === 0) return
 
     const limites = marcadores.reduce(
       (acc, p) => acc.extend([p.lon, p.lat]),
@@ -393,7 +428,7 @@ export function Mapa({
     )
 
     mapa.fitBounds(limites, { padding: 64, maxZoom: 15, animate: false })
-    // seleccionado y encuadrar se leen una sola vez, al montar: agregarlos
+    // seleccionado y encuadreInicial se leen una sola vez, al montar: agregarlos
     // como dependencias reencuadraría el mapa cada vez que se toca un punto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapa, marcadores])
@@ -425,6 +460,27 @@ export function Mapa({
     if (!mapa) return
     mapa.getCanvas().style.cursor = dibujando ? 'crosshair' : ''
   }, [mapa, dibujando])
+
+  /* Ir a un dibujo elegido desde la lista, aunque esté lejos del encuadre. */
+  useEffect(() => {
+    if (!mapa || !encuadrar || encuadrar.length === 0) return
+
+    const { oeste, sur, este, norte } = limitesDe(encuadrar)
+    const alto = mapa.getContainer().clientHeight
+
+    mapa.fitBounds(
+      [
+        [oeste, sur],
+        [este, norte],
+      ],
+      {
+        // El relleno de abajo le deja lugar al panel que se abre con él.
+        padding: { top: 48, left: 48, right: 48, bottom: Math.round(alto * 0.5) },
+        maxZoom: 17,
+        duration: 600,
+      },
+    )
+  }, [mapa, encuadrar])
 
   /* Marcadores. Son elementos del DOM que el mapa posiciona, no capas del
      estilo, así que se pueden colgar apenas existe el mapa. */
@@ -582,34 +638,54 @@ export function Mapa({
       data-anotaciones={anotaciones.length}
       />
 
-      {/* Apagar los dibujos: cuando hay muchos encimados, tapan la imagen y
-          estorban más de lo que ayudan. */}
-      {anotaciones.length > 0 && !dibujando && !colocando ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => onVerAnotaciones(!verAnotaciones)}
-          aria-pressed={!verAnotaciones}
-          className="pointer-events-auto absolute top-3 right-3 z-20 shadow-md"
-        >
-          {verAnotaciones ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-          {verAnotaciones ? 'Dibujos' : 'Ocultos'}
-        </Button>
+      {/* Las dos acciones del mapa, juntas y a la derecha. Abajo a la
+          izquierda vive el aviso de lo que falta ubicar, y separarlas evita
+          que se encimen en una pantalla angosta. */}
+      {!dibujando && !colocando ? (
+        <div className="pointer-events-none absolute right-3 bottom-3 z-20 flex gap-2">
+          {/* Una referencia que no es de nadie: la entrada de un callejón, un
+              cruce. No hace falta pasar por una finca — muchas veces la
+              referencia es justamente para llegar a una que todavía no está
+              cargada. */}
+          {puedeMarcarSueltos && seleccionado === undefined ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={onMarcarSuelto}
+              className="pointer-events-auto shadow-md"
+            >
+              <MapPin className="size-4" />
+              Referencia
+            </Button>
+          ) : null}
+
+          {/* Apagar los dibujos: cuando hay muchos encimados, tapan la imagen
+              y estorban más de lo que ayudan. */}
+          {anotaciones.length > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => onVerAnotaciones(!verAnotaciones)}
+              aria-pressed={!verAnotaciones}
+              className="pointer-events-auto shadow-md"
+            >
+              {verAnotaciones ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+              {verAnotaciones ? 'Dibujos' : 'Ocultos'}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {dibujando ? (
         <>
           <div className="pointer-events-none absolute inset-x-3 top-16 z-20">
             <p className="bg-card/95 rounded-md border px-3 py-2 text-center text-sm shadow-md backdrop-blur">
-              {dibujando.rectangulo
-                ? dibujando.puntos.length === 0
-                  ? 'Tocá una esquina del rectángulo.'
-                  : 'Tocá la esquina opuesta.'
-                : `Tocá el mapa para marcar ${
-                    dibujando.forma === 'PUNTO' ? 'la referencia' : 'cada punto'
-                  }.`}
-              <span className="text-muted-foreground block text-xs">
+              {`Tocá el mapa para marcar ${
+                dibujando.forma === 'PUNTO' ? 'la referencia' : 'cada punto'
+              }.`}
+              <span data-contador-dibujo="true" className="text-muted-foreground block text-xs">
                 {NOMBRE_DE_FORMA[dibujando.forma]} · {dibujando.puntos.length}{' '}
                 {dibujando.puntos.length === 1 ? 'punto' : 'puntos'}
               </span>

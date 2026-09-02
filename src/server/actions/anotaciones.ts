@@ -28,9 +28,22 @@ function esForma(valor: unknown): valor is Forma {
   return FORMAS.includes(valor as Forma)
 }
 
+/**
+ * Quién puede tocar un dibujo, según de qué cuelgue.
+ *
+ * Con finca, el permiso sale de ella. Sin finca —un punto de referencia en la
+ * ruta— no hay de dónde sacarlo: es un recurso propio, interno, que el cliente
+ * no ve ni toca. Ver `authz.ts`.
+ */
+async function exigirPermiso(farmId: string | null | undefined) {
+  if (farmId) return requireAccess('write', 'farm', farmId)
+  return requireAccess('write', 'annotation')
+}
+
 export async function guardarAnotacionAction(datos: {
   id?: string
-  farmId: string
+  farmId: string | null
+  wellId?: string | null
   forma: string
   puntos: unknown
   etiqueta?: string
@@ -38,7 +51,7 @@ export async function guardarAnotacionAction(datos: {
   color?: string
   pintado?: boolean
 }): Promise<ResultadoAnotacion> {
-  await requireAccess('write', 'farm', datos.farmId)
+  await exigirPermiso(datos.farmId)
 
   if (!esForma(datos.forma)) return { ok: false, error: 'Esa forma no existe' }
 
@@ -57,6 +70,16 @@ export async function guardarAnotacionAction(datos: {
     geometry: geo.puntos,
   }
 
+  // El pozo tiene que ser de la finca del dibujo: si no, alguien podría
+  // colgarle un dibujo al pozo de otra finca pasando el farmId de la suya.
+  if (datos.wellId) {
+    const pozo = await prisma.well.findFirst({
+      where: { id: datos.wellId, farmId: datos.farmId ?? undefined, deletedAt: null },
+      select: { id: true },
+    })
+    if (!pozo) return { ok: false, error: 'Ese pozo no es de esta finca' }
+  }
+
   if (datos.id) {
     // El farmId va en el where junto al id: sin eso, alguien podría editar el
     // dibujo de otra finca pasando el farmId de la suya.
@@ -66,14 +89,22 @@ export async function guardarAnotacionAction(datos: {
     })
     if (!existente) return { ok: false, error: 'Ese dibujo ya no está' }
 
-    await prisma.mapAnnotation.update({ where: { id: datos.id }, data: comun })
+    await prisma.mapAnnotation.update({
+      where: { id: datos.id },
+      data: { ...comun, wellId: datos.wellId ?? null },
+    })
     revalidatePath('/mapa')
 
     return { ok: true, id: datos.id }
   }
 
   const creada = await prisma.mapAnnotation.create({
-    data: { ...comun, farmId: datos.farmId, createdById: actor.id },
+    data: {
+      ...comun,
+      farmId: datos.farmId,
+      wellId: datos.wellId ?? null,
+      createdById: actor.id,
+    },
     select: { id: true },
   })
 
@@ -83,10 +114,10 @@ export async function guardarAnotacionAction(datos: {
 }
 
 export async function borrarAnotacionAction(
-  farmId: string,
+  farmId: string | null,
   id: string,
 ): Promise<ResultadoAnotacion> {
-  await requireAccess('write', 'farm', farmId)
+  await exigirPermiso(farmId)
 
   // Borrado suave, como todo lo demás: un dibujo puede ser la única anotación
   // de cómo se entra a una finca, y eso no se pierde por un toque de más.

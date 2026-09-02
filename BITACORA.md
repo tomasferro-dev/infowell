@@ -52,8 +52,8 @@ completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
 ```
 tsc          0 errores
 eslint       0 errores
-vitest       150 tests
-playwright   264 tests e2e (contra Supabase real, 2 viewports)
+vitest       147 tests
+playwright   286 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
 
@@ -364,6 +364,17 @@ puede tener memorizado.
 
 ### Navegador
 
+**Nunca preguntar `typeof navigator !== 'undefined'` durante el render.** Es
+una rama servidor/cliente: da distinto en cada lado, React lo detecta como un
+error de hidratación y tira el árbol entero para volver a generarlo. Se ve en
+la consola y **no** en la pantalla, así que puede quedar meses sin que nadie lo
+note — estuvo así en `captura-gps.tsx` desde que se escribió.
+
+Lo correcto es `useSyncExternalStore(suscribir, leerDelCliente, leerDelServidor)`.
+El mismo patrón sirve para cualquier cosa que exista solo en el navegador:
+`sessionStorage`, `MediaRecorder`, permisos. Ver `voice-recorder.tsx` y
+`aviso-sin-ubicar.tsx`.
+
 - **`MediaRecorder` no trae la duración en la cabecera.** El reproductor nativo
   muestra minutos u horas para un audio de dos segundos. Por eso hay un
   reproductor propio (`reproductor-audio.tsx`) que usa la duración medida al
@@ -384,6 +395,22 @@ puede tener memorizado.
   un deslizamiento rápido React todavía no re-renderizó y el gesto se pierde.
 
 ### Tests
+
+**El indicador de desarrollo de Next está apagado** (`devIndicators: false`).
+Flota sobre la esquina inferior izquierda, justo donde viven botones de verdad,
+y se lleva el toque: en los tests aparece como «`<nextjs-portal>` intercepts
+pointer events», que no se parece en nada a la causa. En producción no existe.
+
+**Nunca reintentar una acción que no sea idempotente.** El helper `elegir`
+reintenta el click y lo dice en su comentario; aun así se cayó en la trampa al
+escribir un helper que reintentaba *agregar un vértice*, y cada reintento
+sumaba un punto de más que deformaba la figura. El síntoma aparecía mucho
+después, al tocar el dibujo donde ya no estaba.
+
+**Los tests de dibujo empiezan con el mapa limpio** (`borrarDibujos` en un
+`beforeEach`). Todos trabajan sobre la misma finca y tocan las mismas
+coordenadas de pantalla: con los dibujos acumulándose, un test termina tocando
+el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 
 - **El loader de Playwright compila a CommonJS y el cliente de Prisma 7 es ESM
   puro**: no se puede importar Prisma desde un `.spec.ts`. Los fixtures corren
@@ -775,6 +802,73 @@ Otras dos que costaron:
   lo limpia al cerrar. La app entera desaparecía para quien usa lector de
   pantalla sin que se notara mirando la pantalla. Se vigila con un
   MutationObserver mientras no hay ninguna ficha abierta.
+
+### Lo que falta ubicar
+
+El mapa avisa qué todavía no está en él, con **nombre y enlace al formulario
+donde se arregla**. Antes era una franja fija que decía «faltan ubicar 2
+registros» y nada más: el usuario se enteraba del problema pero no de cuál era
+ni de cómo resolverlo, no podía cerrarla, y tapaba los botones de dibujo. Un
+aviso que no se puede accionar es ruido.
+
+Se calla mientras se coloca un punto o se dibuja —los dos momentos en que
+estorbaría— y se puede cerrar para toda la visita.
+
+⚠️ **No hay «desactivar» una finca.** La única acción parecida
+(`archivarFincaAction`) pone `deletedAt`: es un borrado suave, y saca del mapa
+la finca con sus pozos y sus dibujos. Además no está conectada a ninguna
+pantalla. Si alguna vez hace falta una finca «apagada pero visible», es otra
+cosa y hay que construirla aparte — hay un test que fija el comportamiento
+actual para que el cambio sea deliberado.
+
+### No hay herramienta «Rectángulo»
+
+La hubo: dos toques y quedaba la finca marcada a grandes rasgos. Se sacó porque
+el perímetro hace lo mismo con cuatro toques y un «Listo», y sostener un
+segundo modo de dibujo —con su bandera propia atravesando el mapa, la ficha y
+el guardado— costaba más de lo que ahorraba. Tenía además un defecto de dibujo
+sin diagnosticar; sacarla lo cerró de raíz.
+
+### Tocar un dibujo
+
+Se toca en el mapa y se abre para corregirlo o borrarlo. La detección usa
+`queryRenderedFeatures` en un cuadradito de 8 px alrededor del dedo, y hay una
+**capa de contacto invisible de 22 px** por debajo de la línea visible: la
+línea mide 3 px y un perímetro sin pintar solo se puede tocar en su borde —
+nadie le acierta a 3 px con el pulgar.
+
+La ficha de la finca además **lista sus dibujos**: encontrarlos recorriendo el
+mapa a ojo no es forma, y desde la lista se abre cualquiera aunque esté fuera
+del encuadre actual.
+
+El panel lleva `key={id}`: sus campos se inicializan al montar, así que sin eso
+tocar otro dibujo con el panel abierto mostraba —y guardaba— el nombre del
+anterior.
+
+**No se pueden mover vértices.** Es bastante más trabajo que todo el resto y
+redibujar un perímetro son cuatro toques. Queda pendiente si alguna vez se
+extraña.
+
+### De qué cuelga un dibujo
+
+Tres casos, y la diferencia entre ellos es de **permisos**, no de dibujo:
+
+| Cuelga de | Ejemplo | Quién lo ve |
+|---|---|---|
+| Una **finca** | Su perímetro, el límite con el vecino | Quien ve esa finca |
+| Un **pozo** | Cómo se llega al cabezal en una finca grande | Quien ve esa finca |
+| **Nada** | Una referencia en la ruta, un cruce | ADMIN y CARGADOR |
+
+Un dibujo de pozo lleva también el `farmId`: de ahí sale su alcance.
+
+⚠️ **Los sueltos son internos.** Al no colgar de ninguna finca quedan fuera de
+la cadena que garantiza el aislamiento, y sus nombres podrían delatarle a un
+cliente dónde están las fincas de otros. Por eso tienen recurso propio en
+`authz.ts` (`'annotation'`), fuera de `FARM_SCOPED`, y el CLIENTE no los recibe
+**ni para leer** — es la única excepción a «cualquier autenticado lee».
+
+El CARGADOR sí puede marcarlos: es el que anda por la ruta y sabe por dónde se
+entra.
 
 ### Seguridad
 

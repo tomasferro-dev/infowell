@@ -24,7 +24,13 @@ export type DatosTest = {
 }
 
 function correrRunner(
-  comando: 'setup' | 'teardown' | 'teardown-catalogo' | 'notas-de-voz' | 'reset-ajustes',
+  comando:   | 'setup'
+  | 'teardown'
+  | 'teardown-catalogo'
+  | 'notas-de-voz'
+  | 'reset-ajustes'
+  | 'archivar-finca'
+  | 'borrar-dibujos',
   marcaCorrida: string,
 ) {
   const salida = execFileSync('npx', ['tsx', RUNNER, comando, marcaCorrida], {
@@ -49,6 +55,16 @@ export function limpiarDatos(marcaCorrida: string) {
 /** Siembra una intervención con dos notas de voz de duraciones distintas. */
 export function sembrarNotasDeVoz(marcaCorrida: string): { wellId: string; farmId: string } {
   return correrRunner('notas-de-voz', marcaCorrida)
+}
+
+/** Deja el mapa sin dibujos, para que cada test de dibujo arranque limpio. */
+export function borrarDibujos(marcaCorrida: string) {
+  correrRunner('borrar-dibujos', marcaCorrida)
+}
+
+/** Archiva la finca propia, como lo haría el administrador. */
+export function archivarFincaPropia(marcaCorrida: string) {
+  correrRunner('archivar-finca', marcaCorrida)
 }
 
 /** Devuelve la numeración de pozos a su valor por defecto. Ver fixture-runner. */

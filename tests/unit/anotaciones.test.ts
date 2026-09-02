@@ -7,7 +7,6 @@ import {
   esPunto,
   limitesDe,
   MAXIMO_DE_PUNTOS,
-  rectangulo,
   validarGeometria,
   type Punto,
 } from '@/lib/anotaciones'
@@ -93,30 +92,6 @@ describe('validación de la geometría', () => {
   })
 })
 
-describe('rectángulo a partir de dos esquinas', () => {
-  it('devuelve cuatro vértices en orden, sin repetir el primero', () => {
-    const r = rectangulo([-69, -33], [-68, -34])
-
-    expect(r).toEqual([
-      [-69, -33],
-      [-68, -33],
-      [-68, -34],
-      [-69, -34],
-    ])
-  })
-
-  it('funciona con las esquinas dadas en cualquier orden', () => {
-    const unOrden = rectangulo([-69, -33], [-68, -34])
-    const otroOrden = rectangulo([-68, -34], [-69, -33])
-
-    // Los vértices son los mismos aunque se recorran al revés.
-    expect([...unOrden].sort()).toEqual([...otroOrden].sort())
-  })
-
-  it('es un perímetro válido', () => {
-    expect(validarGeometria('POLIGONO', rectangulo([-69, -33], [-68, -34])).ok).toBe(true)
-  })
-})
 
 describe('centro y límites', () => {
   it('el centro sirve para poner la etiqueta', () => {

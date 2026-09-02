@@ -1,7 +1,7 @@
 'use client'
 
 import { Crosshair, Loader2, Map, MapPin, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -76,7 +76,23 @@ export function CapturaGps({
   const watchRef = useRef<number | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const soportado = typeof navigator !== 'undefined' && 'geolocation' in navigator
+  /**
+   * Si el navegador tiene GPS.
+   *
+   * Con useSyncExternalStore y no con `typeof navigator !== 'undefined'`: esa
+   * comparación es una rama servidor/cliente, da distinto en cada lado y hace
+   * que React tire el árbol entero y lo vuelva a generar. Es un error que se
+   * ve en la consola y no en la pantalla, así que estuvo acá desde que se
+   * escribió el componente sin que nadie lo notara.
+   *
+   * El servidor asume que sí: es lo que evita que el botón aparezca de golpe
+   * un instante después de cargar la página.
+   */
+  const soportado = useSyncExternalStore(
+    () => () => {},
+    () => 'geolocation' in navigator,
+    () => true,
+  )
 
   function detener() {
     if (watchRef.current !== null) {

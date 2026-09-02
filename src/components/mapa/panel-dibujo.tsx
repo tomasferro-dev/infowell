@@ -32,6 +32,7 @@ export type DatosDibujo = {
 export function PanelDibujo({
   forma,
   puntos,
+  pertenece,
   inicial,
   guardando,
   onGuardar,
@@ -40,6 +41,8 @@ export function PanelDibujo({
 }: {
   forma: Forma
   puntos: number
+  /** A qué pertenece el dibujo. Sin esto, dos límites vecinos son iguales. */
+  pertenece: string
   inicial?: DatosDibujo
   guardando: boolean
   onGuardar: (datos: DatosDibujo) => void
@@ -68,8 +71,10 @@ export function PanelDibujo({
               <Drawer.Title className="text-base font-semibold">
                 {inicial ? 'Editar' : 'Guardar'} {NOMBRE_DE_FORMA[forma].toLowerCase()}
               </Drawer.Title>
+              {/* A qué pertenece: es lo que distingue el límite de una finca
+                  del de la vecina cuando se tocan en el mapa. */}
               <p className="text-muted-foreground text-sm">
-                {puntos} {puntos === 1 ? 'punto marcado' : 'puntos marcados'}
+                {pertenece} · {puntos} {puntos === 1 ? 'punto' : 'puntos'}
               </p>
             </div>
 

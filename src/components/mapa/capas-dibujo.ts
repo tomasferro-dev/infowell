@@ -19,6 +19,7 @@ const CAPAS = {
   linea: 'anotaciones-linea',
   punto: 'anotaciones-punto',
   etiqueta: 'anotaciones-etiqueta',
+  contacto: 'anotaciones-contacto',
   vertice: 'anotaciones-vertice',
   borradorLinea: 'anotaciones-borrador-linea',
   borradorRelleno: 'anotaciones-borrador-relleno',
@@ -26,7 +27,21 @@ const CAPAS = {
 } as const
 
 /** Todas las capas de dibujo, para poder apagarlas de una. */
-export const CAPAS_DE_DIBUJO = [CAPAS.relleno, CAPAS.linea, CAPAS.punto, CAPAS.etiqueta]
+export const CAPAS_DE_DIBUJO = [
+  CAPAS.relleno,
+  CAPAS.contacto,
+  CAPAS.linea,
+  CAPAS.punto,
+  CAPAS.etiqueta,
+]
+
+/**
+ * Las capas donde se busca al tocar, para saber qué dibujo se tocó.
+ *
+ * La etiqueta queda afuera a propósito: el texto flota al costado de la forma
+ * y tocarlo ahí, sobre la imagen, no se siente como haber tocado el dibujo.
+ */
+export const CAPAS_TOCABLES = [CAPAS.relleno, CAPAS.contacto, CAPAS.punto]
 
 type Coleccion = GeoJSON.FeatureCollection<GeoJSON.Geometry>
 
@@ -111,6 +126,24 @@ export function montarCapas(mapa: maplibregl.Map) {
     source: FUENTE,
     filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['==', ['get', 'pintado'], true]],
     paint: { 'fill-color': pinta(COLORES.rojo), 'fill-opacity': 0.25 },
+  })
+
+  /**
+   * Una línea invisible y ancha, solo para poder tocar el dibujo.
+   *
+   * La línea que se ve mide 3 px. Un perímetro sin pintar solo se puede tocar
+   * en su borde, y nadie le acierta a 3 px con el pulgar: sin esta capa, los
+   * dibujos sin relleno quedaban prácticamente inalcanzables.
+   *
+   * Va ANTES de la línea visible para que quede por debajo y no la tape.
+   */
+  mapa.addLayer({
+    id: CAPAS.contacto,
+    type: 'line',
+    source: FUENTE,
+    filter: ['!=', ['geometry-type'], 'Point'],
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': '#000', 'line-opacity': 0, 'line-width': 22 },
   })
 
   mapa.addLayer({
@@ -217,6 +250,7 @@ export function elevarCapas(mapa: maplibregl.Map) {
 /** De abajo hacia arriba: rellenos, líneas, puntos, rótulos y el borrador. */
 const ORDEN_ENCIMA = [
   CAPAS.relleno,
+  CAPAS.contacto,
   CAPAS.linea,
   CAPAS.punto,
   CAPAS.etiqueta,

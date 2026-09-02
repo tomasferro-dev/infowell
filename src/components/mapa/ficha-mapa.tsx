@@ -7,7 +7,6 @@ import {
   Minus,
   Pentagon,
   Plus,
-  Square,
   SquareArrowOutUpRight,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -15,8 +14,8 @@ import { Drawer } from 'vaul'
 
 import { IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { Button } from '@/components/ui/button'
-import type { Forma } from '@/lib/anotaciones'
-import type { MarcadorMapa } from '@/server/queries/farms'
+import { COLORES, esClaveColor, NOMBRE_DE_FORMA, type Forma } from '@/lib/anotaciones'
+import type { AnotacionMapa, MarcadorMapa } from '@/server/queries/farms'
 
 /**
  * Las cuatro maneras de dibujar.
@@ -25,40 +24,37 @@ import type { MarcadorMapa } from '@/server/queries/farms'
  * herramienta propia: dos toques en vez de recorrer el contorno. Es la
  * diferencia entre marcar una finca en cinco segundos y no marcarla nunca.
  */
+/**
+ * No hay herramienta «Rectángulo».
+ *
+ * La hubo: dos toques y quedaba la finca marcada a grandes rasgos. Se sacó
+ * porque el perímetro hace lo mismo con cuatro toques y un «Listo», y sostener
+ * un segundo modo de dibujo —con su bandera propia atravesando el mapa, la
+ * ficha y el guardado— costaba más de lo que ahorraba.
+ */
 const HERRAMIENTAS: {
   forma: Forma
-  rectangulo: boolean
   icono: React.ComponentType<{ className?: string }>
   titulo: string
   detalle: string
 }[] = [
   {
     forma: 'PUNTO',
-    rectangulo: false,
     icono: MapPin,
     titulo: 'Referencia',
     detalle: 'Una entrada, una tranquera, un cruce',
   },
   {
     forma: 'LINEA',
-    rectangulo: false,
     icono: Minus,
     titulo: 'Línea',
     detalle: 'Un callejón, un canal, una división rápida',
   },
   {
     forma: 'POLIGONO',
-    rectangulo: true,
-    icono: Square,
-    titulo: 'Rectángulo',
-    detalle: 'La finca a grandes rasgos, en dos toques',
-  },
-  {
-    forma: 'POLIGONO',
-    rectangulo: false,
     icono: Pentagon,
     titulo: 'Perímetro',
-    detalle: 'El contorno real, punto por punto',
+    detalle: 'El contorno de la finca, punto por punto',
   },
 ]
 
@@ -100,6 +96,8 @@ export function FichaMapa({
   onCerrar,
   onColocarPozo,
   onDibujar,
+  dibujosDeLaFinca,
+  onAbrirDibujo,
   tope,
   onTope,
 }: {
@@ -113,7 +111,11 @@ export function FichaMapa({
     lon: number
     nombreFinca: string
   }) => void
-  onDibujar: (finca: { farmId: string }, forma: Forma, rectangulo: boolean) => void
+  onDibujar: (de: { farmId: string; wellId: string | null }, forma: Forma) => void
+  /** Los dibujos de la finca abierta, para listarlos. */
+  dibujosDeLaFinca: AnotacionMapa[]
+  /** Abrir uno para verlo, corregirlo o borrarlo. */
+  onAbrirDibujo: (id: string) => void
 }) {
   const esFinca = marcador?.tipo === 'finca'
 
@@ -273,17 +275,55 @@ export function FichaMapa({
                   )}
                 </div>
 
-                {/* Dibujar sobre el mapa. Va en la ficha de la finca porque
-                    todo dibujo pertenece a una: es «cómo se llega a acá» y
-                    «hasta dónde llega esto». */}
-                {esFinca && marcador.puedeDibujar ? (
+                {/* Los dibujos que ya tiene. Encontrarlos recorriendo el mapa
+                    a ojo no es forma: acá están listados y se abren de un
+                    toque, aunque estén lejos del encuadre actual. */}
+                {dibujosDeLaFinca.length > 0 ? (
+                  <section className="mt-5">
+                    <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
+                      {esFinca ? 'Dibujos de esta finca' : 'Dibujos de este pozo'}
+                    </h3>
+                    <ul className="divide-y rounded-md border">
+                      {dibujosDeLaFinca.map((d) => (
+                        <li key={d.id}>
+                          <button
+                            type="button"
+                            onClick={() => onAbrirDibujo(d.id)}
+                            className="hover:bg-accent flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="size-3 shrink-0 rounded-full border"
+                              style={{ background: COLORES[esClaveColor(d.color) ? d.color : 'rojo'] }}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {d.etiqueta ?? NOMBRE_DE_FORMA[d.forma]}
+                              </span>
+                              <span className="text-muted-foreground block truncate text-xs">
+                                {NOMBRE_DE_FORMA[d.forma]}
+                                {d.notas ? ` · ${d.notas}` : ''}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+
+                {/* Dibujar sobre el mapa. Está tanto en la finca como en el
+                    pozo: en una finca grande, «cómo se llega al cabezal» es
+                    del pozo y no de la finca entera. */}
+                {marcador.puedeDibujar ? (
                   <section className="mt-5">
                     <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
                       Dibujar en el mapa
                     </h3>
                     <p className="text-muted-foreground mb-3 text-xs">
-                      Lo que el mapa no trae: el callejón que no figura, el límite con el
-                      vecino, la tranquera buena.
+                      {esFinca
+                        ? 'Lo que el mapa no trae: el callejón que no figura, el límite con el vecino, la tranquera buena.'
+                        : 'Cómo se llega a este pozo dentro de la finca, o hasta dónde llega lo suyo.'}
                     </p>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -291,7 +331,17 @@ export function FichaMapa({
                         <button
                           key={h.titulo}
                           type="button"
-                          onClick={() => onDibujar({ farmId: marcador.farmId }, h.forma, h.rectangulo)}
+                          data-herramienta="true"
+                          onClick={() =>
+                            onDibujar(
+                              {
+                                farmId: marcador.farmId,
+                                // En la ficha de un pozo, el dibujo es del pozo.
+                                wellId: esFinca ? null : marcador.id,
+                              },
+                              h.forma,
+                            )
+                          }
                           className="hover:bg-accent focus-visible:ring-ring flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors focus-visible:ring-3 focus-visible:outline-none"
                         >
                           <h.icono className="text-muted-foreground size-4" />

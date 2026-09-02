@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
+import { AvisoSinUbicar, type SinUbicar } from '@/components/mapa/aviso-sin-ubicar'
 import { FichaMapa, TOPES, TOPE_QUE_SIGUE_EL_MAPA } from '@/components/mapa/ficha-mapa'
 import { PanelDibujo, type DatosDibujo } from '@/components/mapa/panel-dibujo'
 import { esClaveColor, type Forma } from '@/lib/anotaciones'
@@ -24,8 +25,9 @@ import type { MarcadorMapa } from '@/server/queries/farms'
  */
 type Dibujando = {
   forma: Forma
-  rectangulo: boolean
-  farmId: string
+  /** De qué cuelga. Los dos en null es un punto suelto, que es válido. */
+  farmId: string | null
+  wellId: string | null
   /** Si viene, se está editando un dibujo que ya existe. */
   id?: string
   puntos: [number, number][]
@@ -62,6 +64,7 @@ export function VistaMapa({
   marcadores,
   anotaciones,
   sinUbicar,
+  puedeMarcarSueltos,
   puntoInicial,
   modo,
   fincaAColocar,
@@ -70,7 +73,9 @@ export function VistaMapa({
 }: {
   marcadores: MarcadorMapa[]
   anotaciones: AnotacionMapa[]
-  sinUbicar: number
+  sinUbicar: SinUbicar[]
+  /** Si el actor puede marcar referencias que no cuelgan de ninguna finca. */
+  puedeMarcarSueltos: boolean
   /** Id de finca o pozo con el que abrir el mapa ya encuadrado. */
   puntoInicial?: string
   /** Si viene, el mapa abre directo en modo colocación. */
@@ -119,6 +124,8 @@ export function VistaMapa({
   const [porGuardar, setPorGuardar] = useState<Dibujando>()
   const [guardando, setGuardando] = useState(false)
   const [verAnotaciones, setVerAnotaciones] = useState(true)
+  /** Id del dibujo al que hay que ir, elegido desde la lista de la ficha. */
+  const [encuadrarDibujo, setEncuadrarDibujo] = useState<string>()
 
   /**
    * Devuelve la app a los lectores de pantalla al cerrar una ficha.
@@ -182,26 +189,42 @@ export function VistaMapa({
         marcadores={marcadores}
         seleccionado={seleccionado}
         onSeleccion={setSeleccionado}
+        encuadrar={anotaciones.find((a) => a.id === encuadrarDibujo)?.puntos}
+        onTocarDibujo={(id) => {
+          const dibujo = anotaciones.find((a) => a.id === id)
+          // Un cliente ve los dibujos pero no los toca: el permiso se decidió
+          // en el servidor y acá solo se obedece.
+          if (!dibujo || !dibujo.puedeEditar) return
+
+          setSeleccionado(undefined)
+          setPorGuardar({
+            forma: dibujo.forma,
+            farmId: dibujo.farmId,
+            wellId: dibujo.wellId,
+            id: dibujo.id,
+            puntos: dibujo.puntos,
+          })
+        }}
         anotaciones={anotaciones}
         verAnotaciones={verAnotaciones}
         onVerAnotaciones={setVerAnotaciones}
         dibujando={dibujando}
-        onPuntos={(puntos) => {
-          setDibujando((actual) => (actual ? { ...actual, puntos } : actual))
-
-          // El rectángulo se cierra solo con la segunda esquina: pedirle
-          // además que toque «Listo» sería un paso de más.
-          if (dibujando?.rectangulo && puntos.length === 4) {
-            setDibujando(undefined)
-            setPorGuardar({ ...dibujando, puntos })
-          }
-        }}
+        onPuntos={(puntos) => setDibujando((actual) => (actual ? { ...actual, puntos } : actual))}
         onTerminarDibujo={() => {
           if (!dibujando) return
           setDibujando(undefined)
           setPorGuardar(dibujando)
         }}
         onCancelarDibujo={() => setDibujando(undefined)}
+        puedeMarcarSueltos={puedeMarcarSueltos}
+        onMarcarSuelto={() => {
+          // Una referencia que no es de nadie: la entrada de un callejón, un
+          // cruce, una tranquera sobre la ruta. No cuelga de ninguna finca,
+          // así que es interna — el cliente ni la ve.
+          setSeleccionado(undefined)
+          setVerAnotaciones(true)
+          setDibujando({ forma: 'PUNTO', farmId: null, wellId: null, puntos: [] })
+        }}
         irAMiUbicacion={puntoInicial === undefined}
         altoFicha={
           seleccionado && typeof tope === 'number'
@@ -225,23 +248,23 @@ export function VistaMapa({
         }}
       />
 
-      {/* Lo que falta marcar se dice, no se omite: un mapa al que le faltan
-          pozos y no lo aclara se lee como un mapa completo. Se calla mientras
-          se coloca un punto, que es cuando estorbaría la barra de confirmar.
-          El margen derecho le deja lugar a la atribución de MapTiler, que va
-          en esa esquina y no se puede tapar. */}
-      {sinUbicar > 0 && !colocando ? (
-        <p className="bg-card/90 text-muted-foreground pointer-events-none absolute right-12 bottom-3 left-3 z-20 rounded-md border px-3 py-2 text-center text-xs shadow-md backdrop-blur">
-          {sinUbicar === 1
-            ? 'Falta ubicar 1 registro con GPS.'
-            : `Faltan ubicar ${sinUbicar} registros con GPS.`}
-        </p>
-      ) : null}
+      {/* Se calla mientras se coloca un punto o se dibuja: son los dos
+          momentos en que estorbaría los botones que están abajo. */}
+      {colocando || dibujando ? null : <AvisoSinUbicar registros={sinUbicar} />}
 
       {porGuardar ? (
         <PanelDibujo
+          /* Uno por dibujo: los campos arrancan del estado inicial y solo se
+             inicializan al montar. Sin key, tocar otro dibujo con el panel ya
+             abierto mostraría el nombre del anterior — y lo guardaría. */
+          key={porGuardar.id ?? 'nuevo'}
           forma={porGuardar.forma}
           puntos={porGuardar.puntos.length}
+          pertenece={
+            anotaciones.find((a) => a.id === porGuardar.id)?.pertenece ??
+            marcadores.find((m) => m.id === (porGuardar.wellId ?? porGuardar.farmId))?.nombre ??
+            'Punto suelto'
+          }
           guardando={guardando}
           inicial={
             porGuardar.id
@@ -283,6 +306,7 @@ export function VistaMapa({
             const r = await guardarAnotacionAction({
               id: porGuardar.id,
               farmId: porGuardar.farmId,
+              wellId: porGuardar.wellId,
               forma: porGuardar.forma,
               puntos: porGuardar.puntos,
               etiqueta: datos.etiqueta,
@@ -311,11 +335,41 @@ export function VistaMapa({
         onCerrar={() => setSeleccionado(undefined)}
         tope={tope}
         onTope={setTope}
-        onDibujar={(finca, forma, esRectangulo) => {
+        dibujosDeLaFinca={
+          seleccionado === undefined
+            ? []
+            : seleccionado.tipo === 'finca'
+              ? // Los de la finca, sin los que son de alguno de sus pozos: esos
+                // se ven en la ficha del pozo, donde significan algo.
+                anotaciones.filter((a) => a.farmId === seleccionado.id && a.wellId === null)
+              : anotaciones.filter((a) => a.wellId === seleccionado.id)
+        }
+        onAbrirDibujo={(id) => {
+          const dibujo = anotaciones.find((a) => a.id === id)
+          if (!dibujo) return
+
+          setSeleccionado(undefined)
+          setVerAnotaciones(true)
+
+          if (dibujo.puedeEditar) {
+            setPorGuardar({
+              forma: dibujo.forma,
+              farmId: dibujo.farmId,
+              wellId: dibujo.wellId,
+              id: dibujo.id,
+              puntos: dibujo.puntos,
+            })
+          }
+
+          // Se encuadra igual, pueda editarlo o no: verlo en el mapa es la
+          // mitad del motivo por el que se toca desde la lista.
+          setEncuadrarDibujo(dibujo.id)
+        }}
+        onDibujar={(de, forma) => {
           // La ficha se va: el mapa tiene que quedar entero para dibujar.
           setSeleccionado(undefined)
           setVerAnotaciones(true)
-          setDibujando({ forma, rectangulo: esRectangulo, farmId: finca.farmId, puntos: [] })
+          setDibujando({ forma, farmId: de.farmId, wellId: de.wellId, puntos: [] })
         }}
         onColocarPozo={(finca) => {
           // La ficha se cierra: el mapa tiene que quedar entero para apuntar.

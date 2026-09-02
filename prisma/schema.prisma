@@ -173,6 +173,7 @@ model Well {
   interventions Intervention[]
   readings      WellStatusReading[]
   observations  Observation[]
+  annotations   MapAnnotation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -411,9 +412,21 @@ enum AnnotationKind {
 /// Cuelgan de una finca, no del mapa en general: es lo que las mete dentro del
 /// mismo cerco de autorización que todo lo demás. Una referencia siempre es
 /// «cómo se llega a tal lugar».
+/// Un dibujo sobre el mapa.
+///
+/// Cuelga de una finca, de un pozo, o de nada:
+///   - de una FINCA: su perímetro, el límite con el vecino, cómo se entra.
+///   - de un POZO: en una finca grande, cómo se llega al cabezal.
+///   - de NADA: un punto de referencia en la ruta, que no es de nadie.
+///
+/// Los dos ids son opcionales y no se excluyen entre sí: un dibujo de pozo
+/// lleva también el de su finca, porque de ahí sale su alcance de permisos.
+/// Un dibujo suelto no tiene ninguno, y por eso es interno — ver
+/// `puntosDelMapa()`.
 model MapAnnotation {
   id     String         @id @default(cuid())
-  farmId String
+  farmId String?
+  wellId String?
   kind   AnnotationKind
 
   label String? // «Entrada por el callejón», «Límite con el vecino»
@@ -436,7 +449,8 @@ model MapAnnotation {
   /// extensión de base para eso sería pagar complejidad sin usarla.
   geometry Json
 
-  farm        Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farm        Farm?  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  well        Well?  @relation(fields: [wellId], references: [id], onDelete: Cascade)
   createdById String
   createdBy   User   @relation("AnnotationAuthor", fields: [createdById], references: [id])
 
@@ -445,4 +459,5 @@ model MapAnnotation {
   deletedAt DateTime?
 
   @@index([farmId, deletedAt])
+  @@index([wellId, deletedAt])
 }

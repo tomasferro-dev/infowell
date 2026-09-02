@@ -28,6 +28,7 @@ export type Resource =
   | 'receipt'
   | 'catalog' // ServiceType y Pump: globales, no pertenecen a una finca
   | 'setting' // ajustes de la app: globales, los cambia solo el admin
+  | 'annotation' // dibujo suelto del mapa: no cuelga de ninguna finca
   | 'user' // gestión de usuarios y membresías
 
 /** Recursos que SIEMPRE pertenecen a una finca y exigen scope. */
@@ -45,8 +46,9 @@ const FARM_SCOPED: ReadonlySet<Resource> = new Set<Resource>([
  * ADMIN se resuelve antes y no figura acá.
  */
 const WRITABLE_BY_ROLE: Record<Exclude<UserRole, 'ADMIN'>, ReadonlySet<Resource>> = {
-  // El operario de campo solo carga remitos. Nada más.
-  CARGADOR: new Set<Resource>(['receipt']),
+  // El operario de campo carga remitos y marca referencias sueltas en el
+  // mapa: es el que anda por la ruta y sabe por dónde se entra.
+  CARGADOR: new Set<Resource>(['receipt', 'annotation']),
   // El cliente es estrictamente de solo lectura.
   CLIENTE: new Set<Resource>(),
 }
@@ -82,6 +84,11 @@ export function authorize(
 
   // 'user' es exclusivo del admin; ya quedó descartado arriba.
   if (resource === 'user') return false
+
+  // Un dibujo suelto no cuelga de ninguna finca, así que queda fuera de la
+  // cadena que garantiza el aislamiento: es interno, y el cliente no lo ve ni
+  // para leer. Sus nombres podrían delatarle dónde están las fincas de otros.
+  if (resource === 'annotation') return WRITABLE_BY_ROLE[actor.role].has(resource)
 
   // Cualquier autenticado lee el catálogo (son nombres de servicios, no datos
   // de cliente); escribirlo es solo del admin.

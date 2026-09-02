@@ -431,9 +431,10 @@ test.describe('cada punto se identifica solo', () => {
 
   test('ningún pozo del mapa se queda sin número', async ({ page }) => {
     await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
-    await page.goto('/mapa')
+    // Encuadrado en la finca: viendo todo el mapa de una, los pines de dos
+    // fincas cercanas se pisan y el toque se lo lleva el de arriba.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
     await esperarMapa(page)
-    await page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`).click()
 
     const rotulos = await page
       .locator('.marcador-mapa[data-tipo="pozo"]')

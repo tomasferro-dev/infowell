@@ -33,13 +33,14 @@ const CLAVE_TEST = 'clave-de-prueba-123'
  */
 function puntoDeLaCorrida(marca: string) {
   let h = 0
-  for (const c of marca) h = (h * 31 + c.charCodeAt(0)) % 100_000
+  for (const c of marca) h = (h * 131 + c.charCodeAt(0)) >>> 0
 
-  // Alrededor de Mendoza, en una grilla de ~1 grado. Sobra para que no se
-  // pisen ni a zoom medio.
+  // Los pasos son de 0.03° (~3 km) y los módulos son primos: dos marcas
+  // consecutivas —que difieren en un dígito del reloj— caían en celdas
+  // vecinas y, al ver todo el mapa de una, sus pines quedaban encimados.
   return {
-    lat: (-33.05 + (h % 100) * 0.01).toFixed(7),
-    lon: (-68.9 + (Math.floor(h / 100) % 100) * 0.01).toFixed(7),
+    lat: (-33.05 + (h % 97) * 0.03).toFixed(7),
+    lon: (-68.9 + (Math.floor(h / 97) % 89) * 0.03).toFixed(7),
   }
 }
 
@@ -215,6 +216,36 @@ async function resetAjustes() {
   return { ok: true }
 }
 
+/** Archiva la finca propia de la corrida, como lo haría el administrador. */
+async function archivarFinca(marca: string) {
+  const finca = await prisma.farm.findFirstOrThrow({
+    where: { name: `${marca} Finca Propia` },
+    select: { id: true },
+  })
+
+  await prisma.farm.update({
+    where: { id: finca.id },
+    data: { deletedAt: new Date(), isActive: false },
+  })
+
+  return { id: finca.id }
+}
+
+/**
+ * Borra los dibujos de las fincas de la corrida.
+ *
+ * Los tests de dibujo trabajan sobre la misma finca y tocan las mismas
+ * coordenadas de pantalla: si los dibujos se acumulan, un test termina tocando
+ * el de otro. Empezar con el mapa limpio es lo que los hace independientes.
+ */
+async function borrarDibujos(marca: string) {
+  const { count } = await prisma.mapAnnotation.deleteMany({
+    where: { farm: { name: { contains: marca } } },
+  })
+
+  return { borrados: count }
+}
+
 async function main() {
   const [comando, marca] = process.argv.slice(2)
 
@@ -229,6 +260,10 @@ async function main() {
           ? await notasDeVoz(marca)
           : comando === 'reset-ajustes'
             ? await resetAjustes()
+            : comando === 'archivar-finca'
+              ? await archivarFinca(marca)
+              : comando === 'borrar-dibujos'
+                ? await borrarDibujos(marca)
             : await teardown(marca)
 
   // El spec lee esto por stdout.
