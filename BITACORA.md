@@ -37,25 +37,57 @@ una finca que no es suya.** Todo lo demás se negocia; esto no.
 
 ## 2. Estado actual
 
-**La app está terminada y deployada.** Las 9 fases del plan original están
-completas, más identidad visual, el renombre a InfoWell y el **mapa satelital**
-(§11) — ninguno de los tres estaba en el plan.
+**La app está en manos del cliente.** Las 9 fases del plan original están
+completas, más identidad visual, el renombre a InfoWell, el **mapa satelital**
+con dibujos (§11) y el **respaldo de datos** — nada de eso estaba en el plan.
 
 - **Repo**: `https://github.com/tomasferro-dev/infowell` (rama `main`)
 - **Local**: `D:\Escritorio\DEV\ARENAS\app-gestion`
-- **Deploy**: Vercel, automático desde `main`
-- **Base y archivos**: un único proyecto de Supabase (⚠️ ver §10)
-- **Datos**: cargados de demostración (§8)
+- **Publicada**: `https://infowell.vercel.app` — Vercel, automático desde `main`
+
+### Quién entra
+
+| Cuenta | Rol | Para qué |
+|---|---|---|
+| `admin@arenas.com.ar` | ADMIN | La del seed, para desarrollo |
+| `nahuelarenas@arenas.com.ar` | ADMIN | **El cliente.** Contraseña en el gestor, no acá |
+
+El login exige un email válido, así que el usuario del cliente no pudo ser
+«nahuelarenas» a secas.
+
+### Qué datos hay
+
+Cuatro fincas con nombres de fantasía, siete pozos, siete remitos, veinticuatro
+intervenciones y cinco dibujos hechos a mano por el cliente (§8). Los restos de
+los tests se limpiaron con `scripts/limpiar-pruebas.ts`; ver §10.
+
+### Las bases: a mitad de camino
+
+| | Base | Estado |
+|---|---|---|
+| **Producción** | `erdpbfcidqxfcxahnwjp` | La que usa Vercel y el cliente |
+| **Desarrollo** | `infowell-dev` | Creada por el usuario, **sin configurar todavía** |
+
+La máquinaria para separarlas ya está: el `.env` queda en producción y no se
+toca, `.env.test` pisa encima solo las cuatro variables de la base, y hay una
+**traba que impide que los tests corran contra la base del cliente**.
+
+⚠️ **Falta un paso, y hasta que se dé, los tests no corren**: crear
+`.env.test` con las credenciales de `infowell-dev` y ejecutar
+`npm run db:preparar:dev`. Ver §10 y DEPLOY.md.
 
 ### Verificación en verde al cierre
 
 ```
-tsc          0 errores
-eslint       0 errores
-vitest       163 tests
-playwright   302 tests e2e (contra Supabase real, 2 viewports)
+tsc              0 errores
+eslint           0 errores
+vitest           163 tests unitarios
+playwright       302 tests e2e (contra Supabase real, 2 viewports)
 build sin .env   compila
 ```
+
+Los e2e son 152 declarados × 2 viewports, menos los que se saltean a propósito
+(los que tocan ajustes globales corren en un solo proyecto — ver §9).
 
 ---
 
@@ -93,7 +125,9 @@ src/
       error.tsx              pantalla de error con reintentar
       not-found.tsx          "no encontrado"
       fincas/[farmId]/       layout con guard + pozos + remitos
+      mapa/                  el mapa satelital (§11)
       admin/                 layout con guard + usuarios + catálogos
+        configuracion/       numeración de pozos + respaldo de datos
     api/
       auth/[...nextauth]/    Auth.js
       uploads/sign/          firma de subida a Storage
@@ -108,8 +142,18 @@ src/
     queries/                 lecturas, siempre acotadas por finca
   components/
     forms/  data/  layout/  ui/
+    mapa/                    el mapa, su ficha y sus capas de dibujo
   lib/
     validation/              esquemas Zod compartidos
+    anotaciones.ts           formas, colores y validación de geometrías
+    colocacion-mapa.ts       ida y vuelta entre un formulario y el mapa
+    respaldo.ts              formato del archivo de respaldo
+    etiquetas-mapa.ts        iniciales de finca y numeración de pozos
+scripts/
+  entorno.ts                 qué base usa cada herramienta, y la traba
+  con-dev.ts                 correr un comando contra la base de desarrollo
+  limpiar-pruebas.ts         sacar restos de pruebas de una base
+  preparar-worker-mapa.mjs   copiar el worker de maplibre a public/ (§9)
 prisma/
   schema.prisma  seed.ts  datos-demo.ts  migrations/
 tests/
@@ -135,8 +179,14 @@ User ─┬─(N:N vía FarmMember)─ Farm ─┬─ Well ─┬─ Interventio
       │                             │        │                ├─ WellStatusReading ─ Pump
       └─(autoría en todo)           │        │                └─ Observation ─ VoiceNote
                                     │        ├─ WellStatusReading   (interventionId nullable)
-                                    │        └─ Observation         (interventionId nullable)
-                                    └─ Receipt ─ ReceiptPhoto
+                                    │        ├─ Observation         (interventionId nullable)
+                                    │        └─ MapAnnotation       (dibujo del pozo)
+                                    ├─ Receipt ─ ReceiptPhoto
+                                    └─ MapAnnotation                (dibujo de la finca)
+
+MapAnnotation con farmId y wellId en null → referencia suelta, sin dueño (§11)
+AppSetting                              → ajustes globales, en clave/valor
+Account · Session · VerificationToken   → tablas de Auth.js, no se tocan
 ```
 
 ### Decisiones de modelado y su razón
@@ -183,7 +233,20 @@ fincas.
 | Leer su finca | ✅ (todas) | ✅ | ✅ |
 | Escribir remitos | ✅ | ✅ | ❌ |
 | Escribir pozos/intervenciones | ✅ | ❌ | ❌ |
+| Dibujar sobre una finca | ✅ | ❌ | ❌ |
+| Referencias sueltas del mapa | ✅ | ✅ | ❌ **ni leerlas** |
 | Usuarios y catálogos | ✅ | ❌ | ❌ |
+| Ajustes y respaldo | ✅ | ❌ | ❌ |
+
+Dos recursos no cuelgan de ninguna finca y por eso tienen reglas propias:
+
+- **`setting`** — los ajustes de la app y el respaldo. Solo ADMIN.
+- **`annotation`** — una referencia suelta del mapa. La ven y la escriben ADMIN
+  y CARGADOR; el CLIENTE **no la recibe ni para leer**. Es la única excepción a
+  «cualquier autenticado lee», y está ahí porque un punto suelto queda fuera de
+  la cadena que garantiza el aislamiento: sus nombres podrían delatarle a un
+  cliente dónde están las fincas de otros. El CARGADOR sí puede marcarlas —es
+  el que anda por la ruta y sabe por dónde se entra—.
 
 ### Cinco decisiones que no hay que revertir sin pensarlo
 
@@ -453,136 +516,55 @@ el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 
 ## 10. Pendientes
 
+### Lo primero: terminar de separar las bases
+
+Es lo único que bloquea trabajar. **Los tests no corren hasta que esté hecho**:
+cortan solos antes de tocar nada.
+
+El usuario ya creó el proyecto `infowell-dev`. Falta:
+
+1. Crear **`.env.test`** en la raíz con las cuatro variables de ese proyecto:
+   `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_SUPABASE_URL` y
+   `SUPABASE_SERVICE_ROLE_KEY`. De dónde sale cada una: DEPLOY.md.
+2. Los dos buckets privados en el proyecto nuevo: `remitos` y `notas-voz`.
+3. `npm run db:preparar:dev` — migraciones, seed y datos de demostración.
+
+**El `.env` no se toca**: es producción, y es lo mismo que hay en Vercel.
+`npm run db:donde` muestra dónde está parado cada archivo.
+
+Cuando estén separadas, **ahí sí** conviene mover `prisma migrate deploy` al
+build de producción. Hoy está afuera a propósito: con una sola base, cada
+deploy de preview migraría los datos del cliente.
+
 ### Lo que puede hacerse sin el usuario
 
 | Pendiente | Nota |
 |---|---|
-| **Historial en el respaldo** | Hoy el respaldo lleva fincas, pozos y dibujos. Las intervenciones y mediciones no. |
-| **Cola de subida offline** | IndexedDB + Background Sync. Difirido a propósito: si falla en silencio, el operario cree que guardó y no guardó. Es una fase propia. |
+| **Historial en el respaldo** | Hoy lleva fincas, pozos y dibujos. Las intervenciones y mediciones no. Ver §11. |
+| **Cola de subida offline** | IndexedDB + Background Sync. Diferido a propósito: si falla en silencio, el operario cree que guardó y no guardó. Es una fase propia. |
 | **Limpieza de archivos huérfanos** | Si alguien graba un audio y abandona el formulario, el archivo queda en el bucket sin fila. |
+| **Desactivar una finca** | No existe. La única acción parecida (`archivarFincaAction`) hace un borrado suave y ni siquiera está conectada a ninguna pantalla. Una finca «apagada pero visible» es otra cosa y hay que construirla. |
+| **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
 
 ### Lo que necesita acción del usuario
 
 | Pendiente | Qué tiene que hacer |
 |---|---|
+| **Cargar las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos de demostración ya vienen ubicados; las fincas de verdad hay que salir a marcarlas. |
 | **Dominio propio (DonWeb)** | Comprarlo. Después: agregarlo en Vercel y copiar los registros DNS **que muestre el panel** (no los de un tutorial: las IP cambiaron). No hace falta para nada — la URL `.vercel.app` ya tiene HTTPS, que es lo único que exigen cámara y micrófono. |
+| **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md: sin esa lista, la clave sirve desde cualquier sitio y un tercero puede gastar la cuota. |
 | **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está; el botón aparece solo. ⚠️ Antes hay que agregar un filtro para que solo entren emails ya dados de alta. |
 | **Transcripción de audio** | Crear cuenta en Groq y cargar `GROQ_API_KEY`. **Requiere IA**: no existe forma de transcribir voz con programación determinista. Groq tiene Whisper large-v3-turbo con plan gratuito generoso. |
 
-### Sobre el mapa
+### Limpiar restos de pruebas
 
-| Pendiente | Nota |
-|---|---|
-| **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
-| **Numeración visible fuera del mapa** | Hoy el número del pozo se ve solo en el mapa. En la ficha del pozo y en el listado de la finca todavía no. |
-| **Cargar coordenadas de las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos demo ya vienen ubicados; las fincas reales hay que salir a marcarlas. |
-| **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md — sin eso la clave sirve desde cualquier sitio. |
+`npx tsx scripts/limpiar-pruebas.ts` muestra qué borraría **sin tocar nada**;
+con `--aplicar` lo hace. Saca fincas, pozos y dibujos con nombre de prueba.
 
-### ⚠️ Separar Supabase dev/prod — el paso que falta
-
-Los pasos exactos están en DEPLOY.md. En resumen: se crea una base NUEVA para
-desarrollo y la actual queda como producción —al revés habría que cambiar
-variables en Vercel y migrar datos, sin ninguna ventaja—. Vercel no se toca.
-
-`npm run db:donde` imprime a qué proyecto apunta el `.env` sin mostrar
-contraseñas. Vale mirarlo antes de correr los tests: es la diferencia entre
-borrar datos de prueba y borrar los del cliente.
-
-#### Por qué urge
-
-**Hoy producción y desarrollo comparten el mismo proyecto de Supabase.** Eso
-significa que los tests e2e escriben y borran en la misma base que usa la app
-publicada, y que compiten por la misma cuota del plan gratuito.
-
-No importó mientras no hubiera datos reales. **Antes de que la empresa cargue
-la primera finca de verdad, hay que separarlo.** El usuario tiene que crear un
-segundo proyecto Supabase (con los buckets privados `remitos` y `notas-voz`) y
-cargar sus variables en Vercel.
-
-Cuando estén separados, **ahí sí** conviene mover `prisma migrate deploy` al
-build de producción. Hoy está fuera a propósito: con una sola base, cada deploy
-de preview migraría los datos reales.
-
----
-
-## 11. Cómo trabajar en el proyecto
-
-```bash
-npm run dev          # servidor de desarrollo
-npm run build        # prisma generate && next build
-npm run typecheck
-npm run lint
-npm run test         # vitest (unitarios)
-npm run db:migrate   # migraciones en desarrollo
-npm run db:deploy    # aplicar migraciones (se corre A MANO, no en el build)
-npm run db:seed      # 13 servicios base + admin
-npm run db:demo      # datos de demostración (DESTRUCTIVO)
-npm run db:studio    # inspeccionar la base
-npm run iconos       # regenerar íconos PWA
-
-npx playwright test --project=mobile              # e2e
-E2E_BASE_URL=https://… npx playwright test        # contra producción
-```
-
-### Antes de dar algo por terminado
-
-```bash
-npx tsc --noEmit; echo "TSC=$?"
-npx eslint .;     echo "LINT=$?"
-npx vitest run;   echo "UNIT=$?"
-mv .env .env.bak && npx next build; echo "BUILD=$?"; mv .env.bak .env
-npx playwright test --project=mobile --workers=2
-```
-
-⚠️ **Verificar el código de salida, no la salida de texto.** `npx eslint . |
-tail` devuelve el código de `tail`, no de eslint — eso enmascaró un error real
-durante el desarrollo.
-
-⚠️ **Los e2e escriben en la base real.** Crean y borran registros con prefijo
-`e2e-`. Mientras dev y prod compartan proyecto, no correrlos contra producción
-si hay datos reales.
-
-### Preferencias del usuario (Tomás)
-
-- Habla y escribe en **español rioplatense**; el código y los comentarios
-  también van en español.
-- **Puede pushear sin preguntar** — lo autorizó explícitamente.
-- Quiere que la app funcione **íntegramente para el cliente**: no dejar cosas a
-  medias. La única excepción aceptada son los límites de los planes gratuitos.
-- Le importa mucho el **feedback visual**: toda acción que tarde debe mostrar
-  algo (ver `loading.tsx`, `useLinkStatus`, esqueletos).
-- Prefiere que se le expliquen las **decisiones y sus motivos**, no solo el
-  resultado.
-
----
-
-## 12. Historial de sesiones
-
-| Etapa | Qué se hizo |
-|---|---|
-| Fase 0 | Scaffolding: Next 16, Prisma 7, shadcn, Vitest, Playwright |
-| Fase 1 | Auth.js v5, núcleo de autorización puro, guards |
-| Fase 2 | CRUD de fincas, pozos y usuarios |
-| Fase 3 | Catálogos extensibles con deduplicación por slug |
-| Fase 4 | **Corazón**: intervención en un submit, timeline, gráficos |
-| Fase 5 | Notas de voz + toda la infraestructura de Storage privado |
-| Fase 6 | Remitos con cámara, compresión y galería |
-| Fase 7 | Auditoría IDOR sistemática + portal del cliente |
-| Fase 8 | PWA con service worker propio (no plugin) |
-| Fase 9 | Deploy en Vercel |
-| Extra | Identidad visual ARENAS + renombre a InfoWell |
-| Extra | Diagnóstico de configuración, mensajes de error con causa |
-| Extra | Varias notas de voz, visor con gestos, detalle de remito |
-| Extra | Estados de carga en toda la app, límites de conexión |
-| Extra | Editar y eliminar intervenciones |
-| Extra | Datos de demostración |
-
-### Documentos relacionados
-
-- **`DEPLOY.md`** — variables de entorno, migraciones, dominio DonWeb, Google
-  OAuth, cómo verificar un deploy.
-- **`AGENTS.md` / `CLAUDE.md`** — advertencia de Next.js sobre leer la
-  documentación de la versión instalada.
+Se usó una vez, cuando treinta dibujos sueltos de los tests aparecieron en el
+mapa del cliente: la limpieza de los tests borraba por finca, y un dibujo
+suelto no tiene finca de la cual colgar. Ya está arreglado en el origen, pero
+el script queda por si aparece algo más.
 
 ---
 
@@ -946,3 +928,157 @@ vista **más agregada de toda la app**: una sola ruta que junta todas las fincas
 del actor, y las coordenadas viajan enteras al navegador. Filtrar en la vista
 no alcanzaría. La auditoría verifica que el id de una finca ajena no aparezca
 en el HTML que recibe el cliente, no solo que no se dibuje.
+
+---
+
+## 12. Cómo trabajar en el proyecto
+
+```bash
+npm run dev              # servidor de desarrollo
+npm run build            # worker del mapa + prisma generate + next build
+npm run typecheck
+npm run lint
+npm run test             # vitest (unitarios)
+npm run iconos           # regenerar íconos PWA
+npm run mapa:worker      # copiar el worker de maplibre a public/ (ver §9)
+```
+
+### Base de datos
+
+Hay **dos**: la de producción (la del cliente) y la de desarrollo. Cuál usa
+cada comando no se elige a mano, se elige por el sufijo:
+
+```bash
+npm run db:donde         # a qué proyecto apunta cada archivo, sin contraseñas
+
+npm run db:preparar:dev  # deja lista la base de DESARROLLO, de cero
+npm run db:deploy:dev    # solo las migraciones
+npm run db:seed:dev      # solo el admin y los 13 servicios base
+npm run db:demo:dev      # solo los datos de demostración (DESTRUCTIVO)
+
+npm run db:migrate       # crear una migración nueva (usa el .env)
+npm run db:studio        # inspeccionar (usa el .env → ¡es producción!)
+```
+
+⚠️ Los comandos **sin** `:dev` usan el `.env`, que es **producción**. Los que
+terminan en `:dev` ponen `.env.test` encima y cortan si apunta al mismo
+proyecto. Ante la duda, `npm run db:donde`.
+
+### Tests
+
+```bash
+npx playwright test                       # los dos viewports
+npx playwright test --project=mobile      # solo móvil, más rápido
+npx playwright test --grep "dibujos"      # un subconjunto
+E2E_BASE_URL=https://…  npx playwright test   # contra la app publicada
+```
+
+✅ **Los e2e no pueden correr contra la base del cliente.** Cortan antes de
+tocar nada si falta `.env.test` o si apunta al mismo proyecto que el `.env`.
+La traba está en `playwright.config.ts` y se verifica en
+`tests/unit/entorno.test.ts`.
+
+Los e2e **escriben en una base real**: crean y borran fincas, pozos y usuarios
+con la marca de la corrida. Por eso importa cuál base es.
+
+### Antes de dar algo por terminado
+
+```bash
+npx tsc --noEmit; echo "TSC=$?"
+npx eslint .;     echo "LINT=$?"
+npx vitest run;   echo "UNIT=$?"
+mv .env .env.bak && npx next build; echo "BUILD=$?"; mv .env.bak .env
+npx playwright test
+```
+
+⚠️ **Verificar el código de salida, no la salida de texto.** `npx eslint . |
+tail` devuelve el código de `tail`, no de eslint — eso enmascaró un error real
+durante el desarrollo.
+
+⚠️ **El build tiene que compilar sin `.env`.** Si un módulo lanza al importarse
+por una variable faltante, `next build` se cae al recolectar los datos de las
+páginas y un problema de configuración se disfraza de error de compilación.
+
+### Preferencias del usuario (Tomás)
+
+- Habla y escribe en **español rioplatense**; el código y los comentarios
+  también van en español.
+- **Puede pushear sin preguntar** — lo autorizó explícitamente.
+- Quiere que la app funcione **íntegramente para el cliente**: no dejar cosas a
+  medias. La única excepción aceptada son los límites de los planes gratuitos.
+- Le importa mucho el **feedback visual**: toda acción que tarde debe mostrar
+  algo (ver `loading.tsx`, `useLinkStatus`, esqueletos).
+- Prefiere que se le expliquen las **decisiones y sus motivos**, no solo el
+  resultado.
+
+---
+
+## 13. Historial de sesiones
+
+| Etapa | Qué se hizo |
+|---|---|
+| Fase 0 | Scaffolding: Next 16, Prisma 7, shadcn, Vitest, Playwright |
+| Fase 1 | Auth.js v5, núcleo de autorización puro, guards |
+| Fase 2 | CRUD de fincas, pozos y usuarios |
+| Fase 3 | Catálogos extensibles con deduplicación por slug |
+| Fase 4 | **Corazón**: intervención en un submit, timeline, gráficos |
+| Fase 5 | Notas de voz + toda la infraestructura de Storage privado |
+| Fase 6 | Remitos con cámara, compresión y galería |
+| Fase 7 | Auditoría IDOR sistemática + portal del cliente |
+| Fase 8 | PWA con service worker propio (no plugin) |
+| Fase 9 | Deploy en Vercel |
+| Extra | Identidad visual ARENAS + renombre a InfoWell |
+| Extra | Diagnóstico de configuración, mensajes de error con causa |
+| Extra | Varias notas de voz, visor con gestos, detalle de remito |
+| Extra | Estados de carga en toda la app, límites de conexión |
+| Extra | Editar y eliminar intervenciones |
+| Extra | Datos de demostración |
+
+### El mapa, después del plan original
+
+| Etapa | Qué se hizo |
+|---|---|
+| Coordenadas | Captura por GPS en fincas y pozos, con precisión y salida manual |
+| El mapa | Ruta `/mapa`, MapLibre + MapTiler, marcadores, ficha arrastrable |
+| Crear desde el mapa | Marcar el punto con la mira, y volver al formulario sin perder lo escrito |
+| Retoques | Memoria de la vista, tres alturas de ficha, elegir punto desde el formulario |
+| Identificación | Iniciales para fincas, números para pozos, y su ajuste en Configuración |
+| Dibujos | Referencias, líneas y perímetros; colores, relleno e interruptor |
+| Edición | Tocar un dibujo para corregirlo o borrarlo, y correr sus vértices |
+| Alcance | Dibujos de pozo y sueltos, con los sueltos como internos |
+
+### Puesta en manos del cliente
+
+| Etapa | Qué se hizo |
+|---|---|
+| Limpieza | Se sacaron los restos de las pruebas de la base publicada |
+| Cuenta | `nahuelarenas@arenas.com.ar` como ADMIN |
+| Respaldo | Exportar e importar fincas, pozos y dibujos en un JSON |
+| Separación | `.env.test` y la traba que impide correr los tests contra el cliente |
+
+### Cosas que costaron caras, y dónde quedaron
+
+No están acá para llevar la cuenta, sino porque cada una volvería a pasar:
+
+| Qué pasó | Dónde está escrito |
+|---|---|
+| El worker de maplibre no sobrevive al empaquetado: sin él nada vectorial anda y la imagen satelital se dibuja igual, así que parece que está todo bien | §9 y §11 |
+| `typeof navigator` durante el render es una rama servidor/cliente: React tira el árbol entero. Se ve en la consola, no en la pantalla | §9 |
+| Playwright puede escribir o tocar ANTES de que React hidrate, y el valor se pierde sin error | §9 |
+| Nunca reintentar una acción que no sea idempotente: agregar un vértice sumaba puntos de más | §9 |
+| Ninguna aserción sobre el mapa por índice: el admin ve los puntos de todas las fincas, también los de otras corridas | §9 |
+| Un ajuste global no se puede testear en paralelo | §9 |
+| Los dibujos sueltos no los alcanza ninguna cascada: quedaron treinta en la base del cliente | §9 y §10 |
+| El proyecto de Supabase se suspendió por inactividad y todo parecía un bug de autenticación | §9 |
+
+### Documentos relacionados
+
+- **`DEPLOY.md`** — variables de entorno y **de dónde sale cada una en el panel
+  de Supabase**, cómo separar las bases, migraciones, dominio DonWeb, Google
+  OAuth, cómo verificar un deploy.
+- **`AGENTS.md` / `CLAUDE.md`** — advertencia de Next.js sobre leer la
+  documentación de la versión instalada.
+- **`scripts/limpiar-pruebas.ts`** — sacar restos de pruebas de una base.
+- **`scripts/entorno.ts`** — qué base usa cada herramienta, y la traba.
+
+---
