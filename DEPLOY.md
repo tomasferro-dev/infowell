@@ -2,12 +2,16 @@
 
 ## Variables de entorno en Vercel
 
-Cargalas en **Production** y **Preview** (Project Settings → Environment Variables):
+En Project Settings → Environment Variables. **Cada entorno tiene su propio
+valor para la misma clave**: Production apunta a la base del cliente y Preview a
+`infowell-dev`. En el panel eso son dos entradas con el mismo nombre, cada una
+tildada en un solo entorno —no se puede tener una sola tildada en los dos con
+valores distintos—.
 
 | Variable | Para qué |
 | --- | --- |
 | `DATABASE_URL` | Conexión de la app (pooler, puerto **6543**) |
-| `AUTH_SECRET` | Firma de las sesiones |
+| `AUTH_SECRET` | Firma de las sesiones. **Distinto en Preview que en Production** |
 | `SUPABASE_URL` | Storage (fotos y audios) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Storage, solo del lado del servidor |
 | `DIRECT_URL` | Conexión directa (puerto **5432**), solo para migrar |
@@ -119,23 +123,20 @@ preparar-worker-mapa && prisma generate && migrar-en-build && next build
 base y el esquema nunca queda atras de la aplicacion, sin que haya que
 acordarse de aplicarlo a mano antes de cada deploy.
 
-### Por que la guarda, y por que no alcanza con tener dos proyectos
+### Por que la guarda, si Preview ya tiene su propia base
 
-Las variables de entorno de este proyecto estan cargadas en Vercel para
-**Production y Preview** (ver la tabla del principio). Eso significa que **un
-deploy de preview apunta a la base del cliente**: separar produccion y
-desarrollo en dos proyectos de Supabase separo la maquina de uno, no los
-previews de Vercel.
+Preview apunta a `infowell-dev`, asi que hoy un preview no podria tocar los
+datos del cliente aunque migrara. La guarda no sobra por eso.
 
-Sin la guarda, cualquier rama con un `schema.prisma` a medio hacer le migraria
-el esquema a los datos reales al abrir un PR. Con la guarda, un preview
-imprime que se saltea y sigue de largo.
+Que Preview tenga otra base es una configuracion del panel de Vercel, no algo
+que este repositorio pueda garantizar. Alcanza con que alguien copie las
+variables de Production a Preview —o cree el proyecto de nuevo— para que
+vuelvan a apuntar a la misma base, y ahi la guarda es lo unico que impide que
+una rama con un `schema.prisma` a medio hacer le migre el esquema a los datos
+reales. **Una proteccion que depende de que nadie toque un panel no es una
+proteccion.**
 
-Si alguna vez se quiere que los previews tengan su propia base, hay que
-cargarles en Vercel las variables de `infowell-dev` **para el entorno Preview**
-—el panel permite un valor distinto por entorno—. Hasta que eso pase, un
-preview lee y escribe los datos del cliente en tiempo de ejecucion, que es algo
-que la guarda de migraciones no cubre.
+Con la guarda, un preview imprime que se saltea y sigue de largo.
 
 ### A mano, cuando hace falta
 

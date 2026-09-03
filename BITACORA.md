@@ -85,18 +85,17 @@ privados y los datos de demostración.
 ```
 tsc              0 errores
 eslint           0 errores
-vitest           163 tests unitarios
-playwright       300 pasan, 2 salteados, 2 por contención (ver abajo)  — 18,9 min
+vitest           168 tests unitarios
+playwright       302 pasan, 2 salteados, 0 fallan  — 17,2 min
 build sin .env   compila
 ```
 
 Los e2e son 152 declarados × 2 viewports, menos los que se saltean a propósito
 (los que tocan ajustes globales corren en un solo proyecto — ver §9).
 
-Los dos que fallaron son `dibujos.spec.ts:360` y `configuracion.spec.ts:87`,
-los dos por `toBeVisible` agotando el tiempo —nunca por una aserción que diera
-un valor distinto—. Corridos solos con `--workers=1` pasan los dos. Es
-contención del plan gratuito, no una regresión; §9 explica cómo se distingue.
+Una corrida anterior tuvo dos caídas por `toBeVisible` agotando el tiempo que
+pasaron solas con `--workers=1`: es contención del plan gratuito y §9 explica
+cómo distinguirla de una regresión.
 
 ---
 
@@ -554,15 +553,20 @@ El build de producción ya aplica las migraciones
 (`scripts/migrar-en-build.ts`), así que el esquema no queda atrás del código sin
 que nadie se acuerde de aplicarlo. Corre **solo con `VERCEL_ENV=production`**.
 
-⚠️ **Esa guarda es la pieza importante, no un detalle.** En el panel de Vercel
-las variables están cargadas para Production **y Preview**, así que un deploy de
-preview apunta a la base del cliente: separar las bases locales no separó los
-previews. Sin la guarda, cualquier rama con un `schema.prisma` a medio hacer le
-migraría el esquema a los datos reales.
+**Preview y Production tienen cada uno sus variables**, con valores distintos
+para la misma clave —el panel de Vercel lo permite—: Production apunta a la
+base del cliente y Preview a `infowell-dev`, con su propio `AUTH_SECRET`.
 
-Queda algo que la guarda **no** cubre: un preview sigue leyendo y escribiendo
-los datos del cliente en tiempo de ejecución. Para cerrarlo hay que cargar en
-Vercel las variables de `infowell-dev` para el entorno Preview —ver §10—.
+⚠️ **La guarda sigue haciendo falta igual.** Que hoy Preview tenga otra base es
+una configuración del panel, no algo que el repositorio pueda garantizar: si
+mañana alguien copia las variables de Production a Preview, la guarda es lo
+único que evita que una rama a medio hacer le migre el esquema a los datos
+reales. Una protección que depende de que nadie toque un panel no es una
+protección.
+
+Los `AUTH_SECRET` son distintos a propósito: la sesión es un JWT y **el rol
+viaja adentro del token**, así que con el mismo secreto una sesión creada en un
+preview —con las cuentas de prueba— tendría una firma que producción acepta.
 
 ### Lo que puede hacerse sin el usuario
 
@@ -579,7 +583,6 @@ Vercel las variables de `infowell-dev` para el entorno Preview —ver §10—.
 | Pendiente | Qué tiene que hacer |
 |---|---|
 | **Cargar las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos de demostración ya vienen ubicados; las fincas de verdad hay que salir a marcarlas. |
-| **Preview de Vercel con su propia base** | Los previews usan hoy las variables de producción, así que leen y escriben los datos del cliente. En Vercel se puede dar un valor distinto por entorno: cargar las cuatro variables de `infowell-dev` para **Preview**. Las migraciones ya están cubiertas por la guarda del build; esto es el resto. |
 | **Dominio propio (DonWeb)** | Comprarlo. Después: agregarlo en Vercel y copiar los registros DNS **que muestre el panel** (no los de un tutorial: las IP cambiaron). No hace falta para nada — la URL `.vercel.app` ya tiene HTTPS, que es lo único que exigen cámara y micrófono. |
 | **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md: sin esa lista, la clave sirve desde cualquier sitio y un tercero puede gastar la cuota. |
 | **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está; el botón aparece solo. ⚠️ Antes hay que agregar un filtro para que solo entren emails ya dados de alta. |
