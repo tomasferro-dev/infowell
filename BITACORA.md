@@ -636,6 +636,23 @@ error, así que el sub-métrico no aporta.
 
 Cambiar de proveedor es una sola variable de entorno y el `style` del mapa.
 
+**Nitidez y antigüedad son dos cosas distintas, y la imagen es vieja.** Lo de
+arriba mide cuánto se puede acercar uno; no dice de cuándo es la foto. MapTiler
+no publica la fecha de captura por tile, pero el servicio de metadatos de Esri
+sobre Luján de Cuyo (-33.0412, -68.8934) devuelve **imagen de alta resolución
+del 5 de mayo de 2023**. Zoom afuera aparece una capa de 2025, pero es la de
+baja resolución: la que se ve al acercarse a un pozo es la de 2023.
+
+Es el patrón normal en zona rural —la alta resolución se renueva cada varios
+años— y **no afecta los datos**: la posición de un pozo sale del GPS del
+teléfono, no de la foto. Lo que envejece es el contexto: un galpón nuevo, un
+cuadro replantado o un camino que cambió no están en la imagen. Molesta cuando
+alguien busca ubicarse por referencias que la foto todavía no tiene.
+
+⚠️ **Cambiar de proveedor no arregla esto.** Esri está en 2023 sobre la misma
+zona: se cambiaría por lo mismo. La salida, si alguna vez molesta de verdad, es
+dejar que el usuario suba su propia imagen sobre el mapa —ver §10—.
+
 ### Decisiones que no conviene revertir
 
 - **Los pozos se ocultan por debajo de z13** (`ZOOM_POZOS` en `mapa.tsx`). Un
