@@ -222,7 +222,10 @@ export function VistaMapa({
     altoImagen: number
     nombre: string
     farmId: string
-    archivo: File
+    /** El archivo a subir. Falta cuando se está RECALZANDO una ya guardada. */
+    archivo?: File
+    /** La imagen que se está recalzando, si es una que ya existía. */
+    id?: string
   }>()
   const [opacidadCalzado, setOpacidadCalzado] = useState(OPACIDAD_POR_DEFECTO)
 
@@ -302,6 +305,39 @@ export function VistaMapa({
     setGuardando(true)
 
     try {
+      /*
+       * Recalzar es solo mover: el archivo ya está en el bucket y no se vuelve
+       * a subir. Subirlo de nuevo dejaría el anterior huérfano cada vez que
+       * alguien corrige la alineación, que es justo lo que se hace varias
+       * veces seguidas hasta que calza.
+       */
+      if (calzando.id) {
+        const r = await actualizarImagenMapaAction({
+          id: calzando.id,
+          farmId: calzando.farmId,
+          esquinas,
+          opacidad: opacidadCalzado,
+        })
+
+        if (!r.ok) {
+          toast.error(r.error)
+          return
+        }
+
+        salirDelCalzado()
+        toast.success('Imagen recalzada.')
+        router.refresh()
+        return
+      }
+
+      // Llegar acá sin archivo sería un alta sin nada que subir. No puede
+      // pasar —el camino de recalzar ya volvió— pero se dice en vez de
+      // confiar: un `!` acá taparía el día que alguien agregue un camino nuevo.
+      if (!calzando.archivo) {
+        toast.error('Falta el archivo de la imagen.')
+        return
+      }
+
       // 2000px y no los 1600 de un remito: un remito se lee, una imagen del
       // mapa se compara contra el terreno, y ahí el detalle es el punto.
       // Comprimir NO cambia la proporción, así que las esquinas siguen valiendo.
@@ -356,6 +392,47 @@ export function VistaMapa({
       // La causa real: sin esto, un problema de configuración se ve igual que
       // una imagen pesada o una señal mala.
       toast.error(error instanceof Error ? error.message : 'No se pudo subir la imagen.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  /**
+   * Vuelve a calzar una imagen que ya está guardada.
+   *
+   * El archivo se baja del bucket a un `blob:` del propio origen, igual que
+   * para dibujarla: la ruta de archivos redirige a Supabase y una textura de
+   * WebGL cruzada dependería de CORS de otro dominio.
+   */
+  const recalzar = async (id: string) => {
+    const imagen = imagenes.find((i) => i.id === id)
+    if (!imagen) return
+
+    setGuardando(true)
+
+    try {
+      const respuesta = await fetch(`/api/files/mapa/${imagen.rutaArchivo}`)
+      if (!respuesta.ok) throw new Error('No se pudo bajar la imagen para recalzarla.')
+
+      const blob = await respuesta.blob()
+      const bitmap = await createImageBitmap(blob)
+
+      setImagenAbierta(undefined)
+      setSeleccionado(undefined)
+      setOpacidadCalzado(imagen.opacidad)
+      setCalzando({
+        url: URL.createObjectURL(blob),
+        anchoImagen: bitmap.width,
+        altoImagen: bitmap.height,
+        nombre: imagen.etiqueta ?? 'Imagen del terreno',
+        farmId: imagen.farmId,
+        id: imagen.id,
+      })
+      bitmap.close()
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'No se pudo abrir la imagen para recalzarla.',
+      )
     } finally {
       setGuardando(false)
     }
@@ -511,6 +588,7 @@ export function VistaMapa({
           onCancelar={() => setImagenAbierta(undefined)}
           onGuardar={(datos) => void cambiarImagen(imagenAbierta, datos)}
           onBorrar={() => void borrarImagen(imagenAbierta)}
+          onRecalzar={() => void recalzar(imagenAbierta)}
         />
       ) : null}
 

@@ -7,6 +7,7 @@ import {
   esEsquinas,
   esOpacidad,
   rutaEsDeLaFinca,
+  type Esquinas,
 } from '@/lib/imagen-mapa'
 import { prisma } from '@/server/db'
 import { requireAccess, requireActor } from '@/server/guards'
@@ -74,10 +75,11 @@ export async function guardarImagenMapaAction(datos: {
 }
 
 /**
- * Cambia el nombre, la opacidad o si se dibuja.
+ * Cambia el nombre, la opacidad, si se dibuja, o dónde queda.
  *
- * Lo que no se toca acá son las esquinas: recalzar una imagen es volver a
- * alinearla contra el terreno, y eso se hace en el mapa, no en un formulario.
+ * Las esquinas nuevas NO vienen de un formulario: llegan de recalzar la imagen
+ * sobre el mapa, que es la única forma de alinearla contra el terreno. El
+ * panel de edición no las toca.
  */
 export async function actualizarImagenMapaAction(datos: {
   id: string
@@ -85,16 +87,35 @@ export async function actualizarImagenMapaAction(datos: {
   etiqueta?: string
   opacidad?: unknown
   visible?: unknown
+  esquinas?: unknown
 }): Promise<ResultadoImagen> {
   await requireAccess('write', 'overlay', datos.farmId)
 
-  const cambios: { etiqueta?: string | null; opacidad?: number; visible?: boolean } = {}
+  const cambios: {
+    etiqueta?: string | null
+    opacidad?: number
+    visible?: boolean
+    esquinas?: Esquinas
+  } = {}
 
   // `undefined` es «no lo mandes» y string vacío es «borá el nombre»: son
   // cosas distintas y por eso se distinguen antes de armar el update.
   if (datos.etiqueta !== undefined) cambios.etiqueta = texto(datos.etiqueta, 120)
   if (esOpacidad(datos.opacidad)) cambios.opacidad = datos.opacidad
   if (typeof datos.visible === 'boolean') cambios.visible = datos.visible
+
+  /*
+   * Las esquinas se validan aparte del resto: si vinieran rotas hay que
+   * CORTAR, no seguir guardando los otros campos. Guardar el nombre nuevo y
+   * dejar la imagen en cualquier lado sería peor que no guardar nada, porque
+   * el usuario vería que «funcionó».
+   */
+  if (datos.esquinas !== undefined) {
+    if (!esEsquinas(datos.esquinas)) {
+      return { ok: false, error: 'No se pudo leer dónde quedó la imagen' }
+    }
+    cambios.esquinas = datos.esquinas
+  }
 
   if (Object.keys(cambios).length === 0) {
     return { ok: false, error: 'No hay nada para cambiar' }

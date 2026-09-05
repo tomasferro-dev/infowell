@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Loader2, Trash2 } from 'lucide-react'
+import { Check, Loader2, Move, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Drawer } from 'vaul'
 
@@ -15,8 +15,10 @@ import { Label } from '@/components/ui/label'
  * tocar algo hecho lo abre para corregirlo o borrarlo. Que dos cosas parecidas
  * se comporten distinto es lo que obliga a aprender la app dos veces.
  *
- * Acá NO se recalza: mover la imagen es alinearla contra el terreno, y eso se
- * hace mirando el mapa, no un formulario.
+ * Recalzar no se hace acá adentro: el botón cierra el panel y devuelve la
+ * imagen al mapa, porque alinearla contra el terreno es mirar las dos capas a
+ * la vez. Va aparte de Guardar por lo mismo que «Mover los puntos» en el panel
+ * de un dibujo: es otra cosa, y termina en otro lado.
  */
 
 export function PanelImagenGuardada({
@@ -25,6 +27,7 @@ export function PanelImagenGuardada({
   guardando,
   onGuardar,
   onBorrar,
+  onRecalzar,
   onCancelar,
 }: {
   etiqueta: string
@@ -32,6 +35,8 @@ export function PanelImagenGuardada({
   guardando: boolean
   onGuardar: (datos: { etiqueta: string; opacidad: number }) => void
   onBorrar: () => void
+  /** Volver al mapa a corregir la alineación. */
+  onRecalzar: () => void
   onCancelar: () => void
 }) {
   const [etiqueta, setEtiqueta] = useState(etiquetaInicial)
@@ -87,7 +92,18 @@ export function PanelImagenGuardada({
             </div>
           </div>
 
-          <div className="bg-card shrink-0 border-t px-4 pt-3 pb-4">
+          <div className="bg-card shrink-0 space-y-2 border-t px-4 pt-3 pb-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full justify-start"
+              disabled={guardando}
+              onClick={onRecalzar}
+            >
+              <Move className="size-4" />
+              <span className="flex-1 text-left">Recalzar sobre el terreno</span>
+            </Button>
+
             <div className="flex gap-2">
               <Button
                 type="button"

@@ -352,3 +352,58 @@ test.describe('administrar las imágenes guardadas', () => {
     await expect(page.locator('[data-abrir-imagen]')).toHaveCount(0)
   })
 })
+
+/** Dónde está la imagen guardada, en coordenadas del terreno. */
+async function esquinasGuardadas(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const mapa = (window as unknown as { __mapa?: import('maplibre-gl').Map }).__mapa
+    if (!mapa) return null
+
+    const capa = mapa.getStyle().layers.find((c) => c.id.startsWith('imagen-guardada-'))
+    if (!capa) return null
+
+    const fuente = mapa.getSource(capa.id) as unknown as { coordinates?: number[][] }
+    return fuente.coordinates ?? null
+  })
+}
+
+test.describe('recalzar una imagen ya guardada', () => {
+  test('se corrige la alineación sin volver a subir el archivo', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await dejarUnaImagenGuardada(page, datos.fincaPropiaId)
+
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await expect.poll(() => capasDeImagen(page), { timeout: 20_000 }).toHaveLength(1)
+
+    const antes = await esquinasGuardadas(page)
+    expect(antes, 'tiene que haber una imagen dibujada').not.toBeNull()
+
+    await abrirFichaEntera(page, datos.fincaPropiaId)
+    await page.locator('[data-abrir-imagen]').click()
+    await page.getByRole('button', { name: 'Recalzar sobre el terreno' }).click()
+
+    // Vuelve al modo calzado, con la imagen que ya estaba.
+    await expect(page.getByText('Calzar la imagen')).toBeVisible({ timeout: 20_000 })
+
+    // Se mueve el mapa por debajo: eso recoloca la imagen contra el terreno.
+    await page.evaluate(() => {
+      const mapa = (window as unknown as { __mapa?: import('maplibre-gl').Map }).__mapa
+      mapa?.jumpTo({ center: [mapa.getCenter().lng + 0.006, mapa.getCenter().lat + 0.003] })
+    })
+    await page.waitForTimeout(400)
+
+    await page.getByRole('button', { name: 'Guardar' }).click()
+    await expect(page.getByText('Imagen recalzada.')).toBeVisible({ timeout: 30_000 })
+
+    // Sigue habiendo UNA sola: recalzar mueve, no duplica.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await expect.poll(() => capasDeImagen(page), { timeout: 20_000 }).toHaveLength(1)
+
+    // Y quedó en otro lado del terreno, que es el punto de recalzar.
+    const despues = await esquinasGuardadas(page)
+    expect(despues).not.toBeNull()
+    expect(despues).not.toEqual(antes)
+  })
+})
