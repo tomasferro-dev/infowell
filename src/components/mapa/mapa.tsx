@@ -17,9 +17,31 @@ import {
   montarCapas,
   mostrarDibujos,
 } from '@/components/mapa/capas-dibujo'
+import {
+  esquinasDeRectangulo,
+  montarImagen,
+  moverImagen,
+  opacidadImagen,
+  quitarImagen,
+  rectanguloParaMapa,
+} from '@/components/mapa/capa-imagen'
 import { Button } from '@/components/ui/button'
+import type { Esquinas } from '@/lib/imagen-mapa'
 import { limitesDe, MINIMO_DE_PUNTOS, NOMBRE_DE_FORMA, type Punto } from '@/lib/anotaciones'
 import type { AnotacionMapa, MarcadorMapa } from '@/server/queries/farms'
+
+/**
+ * La imagen que se está calzando sobre el terreno.
+ *
+ * `url` es un `blob:` del propio origen (ver capa-imagen.ts). Los tamaños
+ * vienen de la imagen ya decodificada: sin ellos no se puede respetar su
+ * proporción y la foto entra deformada.
+ */
+export type Calzando = {
+  url: string
+  anchoImagen: number
+  altoImagen: number
+}
 
 /** Lo que se está dibujando o reformando ahora mismo. */
 export type Dibujando = {
@@ -186,6 +208,9 @@ export function Mapa({
   anotaciones,
   verAnotaciones,
   onVerAnotaciones,
+  calzando,
+  opacidadCalzado = 0.8,
+  onEsquinas,
   dibujando,
   moviendo,
   onMoverVertice,
@@ -228,6 +253,17 @@ export function Mapa({
   anotaciones: AnotacionMapa[]
   verAnotaciones: boolean
   onVerAnotaciones: (ver: boolean) => void
+  /** La imagen que se está calzando, o undefined si no hay ninguna. */
+  calzando?: Calzando
+  opacidadCalzado?: number
+  /**
+   * Las cuatro esquinas donde quedó la imagen, al SOLTAR el mapa.
+   *
+   * Al soltar y no durante el arrastre: ahí el evento corre sesenta veces por
+   * segundo y no hay estado de React que lo aguante. La imagen sí se mueve en
+   * cada cuadro — eso es dibujo, no estado.
+   */
+  onEsquinas?: (esquinas: Esquinas) => void
   dibujando?: Dibujando
   /**
    * Un dibujo al que se le están corriendo los puntos.
@@ -267,6 +303,11 @@ export function Mapa({
   const dibujoActual = useRef(dibujando)
   // Los dibujos, para poder reponerlos si el estilo se recarga.
   const anotacionesActuales = useRef(anotaciones)
+  // Por ref: el efecto del calzado no debe recrearse cuando cambia el aviso ni
+  // la opacidad — recrearse significa devolver la imagen al centro de la
+  // pantalla mientras alguien la está alineando.
+  const alEsquinas = useRef(onEsquinas)
+  const opacidadCalzadoActual = useRef(opacidadCalzado)
   useEffect(() => {
     alSeleccionar.current = onSeleccion
     alTocarDibujo.current = onTocarDibujo
@@ -276,6 +317,8 @@ export function Mapa({
     alDibujar.current = onPuntos
     dibujoActual.current = dibujando
     anotacionesActuales.current = anotaciones
+    alEsquinas.current = onEsquinas
+    opacidadCalzadoActual.current = opacidadCalzado
   })
 
   useEffect(() => {
@@ -649,6 +692,70 @@ export function Mapa({
     }
   }, [mapa, colocando])
 
+  /**
+   * Modo calzado.
+   *
+   * La imagen queda fija a la PANTALLA y el usuario mueve el mapa por debajo.
+   * Es el mismo principio que el modo colocación de un pozo, y por la misma
+   * razón: si se arrastrara la imagen con el dedo, el dedo taparía justo la
+   * referencia contra la que se la está alineando.
+   *
+   * El regalo de hacerlo así es que las tres transformaciones salen gratis y
+   * con gestos que el usuario ya sabe: arrastrar el mapa mueve la imagen
+   * contra el terreno, acercar la escala, y girar la gira. Sin manijas
+   * diminutas, sin pelear con los gestos del mapa, y funciona igual con
+   * guantes que con un mouse.
+   */
+  const rectanguloCalzado = useRef<{ x: number; y: number; ancho: number; alto: number }>(undefined)
+
+  useEffect(() => {
+    // capasListas importa: sin el estilo cargado, addSource revienta con
+    // «Style is not done loading» (ver el montaje de las capas de dibujo).
+    if (!mapa || !capasListas || !calzando) return
+
+    const r = rectanguloParaMapa(mapa, calzando.anchoImagen, calzando.altoImagen)
+    rectanguloCalzado.current = r
+
+    montarImagen(mapa, calzando.url, esquinasDeRectangulo(mapa, r), opacidadCalzadoActual.current)
+
+    // Los dibujos vuelven arriba. Una foto tapando un dibujo sería una
+    // regresión que nadie reporta: simplemente el dibujo «no está».
+    elevarCapas(mapa)
+
+    // En cada cuadro: es dibujo, no estado.
+    const clavar = () => {
+      if (rectanguloCalzado.current) {
+        moverImagen(mapa, esquinasDeRectangulo(mapa, rectanguloCalzado.current))
+      }
+    }
+
+    // Al soltar: recién acá sube a React.
+    const avisar = () => {
+      if (rectanguloCalzado.current) {
+        alEsquinas.current?.(esquinasDeRectangulo(mapa, rectanguloCalzado.current))
+      }
+    }
+
+    mapa.on('move', clavar)
+    mapa.on('moveend', avisar)
+    avisar()
+
+    return () => {
+      mapa.off('move', clavar)
+      mapa.off('moveend', avisar)
+      rectanguloCalzado.current = undefined
+      quitarImagen(mapa)
+    }
+    // Las medidas y la url, no el objeto: un literal nuevo en cada render
+    // remontaría la imagen y la devolvería al centro mientras se la calza.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapa, capasListas, calzando?.url, calzando?.anchoImagen, calzando?.altoImagen])
+
+  /* La opacidad va aparte: cambiarla no debe remontar ni recentrar la imagen. */
+  useEffect(() => {
+    if (mapa) opacidadImagen(mapa, opacidadCalzado)
+  }, [mapa, opacidadCalzado, calzando])
+
   /* El marcador abierto se resalta, para no perderlo detrás de la ficha. */
   useEffect(() => {
     if (!contenedor.current) return
@@ -715,7 +822,7 @@ export function Mapa({
       {/* Las dos acciones del mapa, juntas y a la derecha. Abajo a la
           izquierda vive el aviso de lo que falta ubicar, y separarlas evita
           que se encimen en una pantalla angosta. */}
-      {!dibujando && !colocando && !moviendo ? (
+      {!dibujando && !colocando && !moviendo && !calzando ? (
         <div className="pointer-events-none absolute right-3 bottom-3 z-20 flex gap-2">
           {/* Una referencia que no es de nadie: la entrada de un callejón, un
               cruce. No hace falta pasar por una finca — muchas veces la

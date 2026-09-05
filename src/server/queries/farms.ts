@@ -395,6 +395,20 @@ export async function puntosDelMapa() {
     // Si puede marcar referencias que no cuelgan de ninguna finca. Es interno:
     // el cliente ni las ve. Ver `authz.ts`.
     puedeMarcarSueltos: authorize(actor, 'write', 'annotation'),
+    /*
+     * Si puede calzar imágenes sobre el terreno.
+     *
+     * No se pregunta `authorize(actor, 'write', 'overlay')` a secas: `overlay`
+     * es de finca, y sin finca la respuesta es NO a propósito — es la regla
+     * que impide que un scope olvidado se cuele por omisión.
+     *
+     * Así que se pregunta sobre las fincas que el actor YA puede ver. Es solo
+     * la pista para mostrar el botón; el permiso de verdad se vuelve a decidir
+     * por finca en la acción y en la firma de subida.
+     */
+    puedeCalzarImagen: marcadores.some(
+      (m) => m.tipo === 'finca' && authorize(actor, 'write', 'overlay', m.id),
+    ),
   }
 }
 

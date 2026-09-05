@@ -2,13 +2,15 @@
 
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { AvisoSinUbicar, type SinUbicar } from '@/components/mapa/aviso-sin-ubicar'
 import { FichaMapa, TOPES, TOPE_QUE_SIGUE_EL_MAPA } from '@/components/mapa/ficha-mapa'
 import { PanelDibujo, type DatosDibujo } from '@/components/mapa/panel-dibujo'
+import { PanelImagen } from '@/components/mapa/panel-imagen'
 import { esClaveColor, type ClaveColor, type Forma } from '@/lib/anotaciones'
+import { OPACIDAD_POR_DEFECTO, type Esquinas } from '@/lib/imagen-mapa'
 import { destinoDeColocacion, type ModoColocacion } from '@/lib/colocacion-mapa'
 import {
   borrarAnotacionAction,
@@ -65,6 +67,7 @@ export function VistaMapa({
   anotaciones,
   sinUbicar,
   puedeMarcarSueltos,
+  puedeCalzarImagen = false,
   puntoInicial,
   modo,
   fincaAColocar,
@@ -76,6 +79,8 @@ export function VistaMapa({
   sinUbicar: SinUbicar[]
   /** Si el actor puede marcar referencias que no cuelgan de ninguna finca. */
   puedeMarcarSueltos: boolean
+  /** Si el actor puede calzar imágenes sobre el terreno. Solo el admin. */
+  puedeCalzarImagen?: boolean
   /** Id de finca o pozo con el que abrir el mapa ya encuadrado. */
   puntoInicial?: string
   /** Si viene, el mapa abre directo en modo colocación. */
@@ -188,6 +193,59 @@ export function VistaMapa({
   // durante el render y no en un efecto — es estado derivado, y en un efecto
   // encadenaría un render de más por cada punto que se toca.
   const [idPrevio, setIdPrevio] = useState(seleccionado?.id)
+
+  /**
+   * El calzado de una imagen.
+   *
+   * La url es un `blob:` creado acá y hay que revocarlo al terminar: si no, el
+   * archivo queda en memoria del navegador toda la visita. Con capturas
+   * satelitales, que pesan, eso se nota.
+   */
+  const [calzando, setCalzando] = useState<{
+    url: string
+    anchoImagen: number
+    altoImagen: number
+    nombre: string
+    farmId: string
+    archivo: File
+  }>()
+  const [opacidadCalzado, setOpacidadCalzado] = useState(OPACIDAD_POR_DEFECTO)
+  const esquinasActuales = useRef<Esquinas>(undefined)
+
+  const salirDelCalzado = () => {
+    setCalzando((actual) => {
+      if (actual) URL.revokeObjectURL(actual.url)
+      return undefined
+    })
+    setOpacidadCalzado(OPACIDAD_POR_DEFECTO)
+    esquinasActuales.current = undefined
+  }
+
+  /** Decodifica para saber la proporción: sin ella la imagen entra deformada. */
+  const elegirImagen = async (archivo: File, farmId: string) => {
+    const url = URL.createObjectURL(archivo)
+
+    try {
+      const bitmap = await createImageBitmap(archivo)
+      setCalzando({
+        url,
+        anchoImagen: bitmap.width,
+        altoImagen: bitmap.height,
+        nombre: archivo.name,
+        farmId,
+        archivo,
+      })
+      bitmap.close()
+      // La ficha se va: ocupa media pantalla, y calzar es justamente poder
+      // mirar el mapa entero.
+      setSeleccionado(undefined)
+    } catch {
+      // Un archivo que el navegador no puede decodificar no es una imagen,
+      // por más que la extensión diga que sí.
+      URL.revokeObjectURL(url)
+      toast.error('No se pudo leer esa imagen. Probá con un JPG o un PNG.')
+    }
+  }
   if (seleccionado?.id !== idPrevio) {
     setIdPrevio(seleccionado?.id)
     if (seleccionado) setTope(TOPES[0]!)
@@ -214,6 +272,11 @@ export function VistaMapa({
             id: dibujo.id,
             puntos: dibujo.puntos,
           })
+        }}
+        calzando={calzando}
+        opacidadCalzado={opacidadCalzado}
+        onEsquinas={(esquinas) => {
+          esquinasActuales.current = esquinas
         }}
         anotaciones={anotaciones}
         verAnotaciones={verAnotaciones}
@@ -296,6 +359,20 @@ export function VistaMapa({
       {/* Se calla mientras se coloca un punto o se dibuja: son los dos
           momentos en que estorbaría los botones que están abajo. */}
       {colocando || dibujando || moviendo ? null : <AvisoSinUbicar registros={sinUbicar} />}
+
+      {calzando ? (
+        <PanelImagen
+          nombreArchivo={calzando.nombre}
+          opacidad={opacidadCalzado}
+          onOpacidad={setOpacidadCalzado}
+          guardando={guardando}
+          onCancelar={salirDelCalzado}
+          onGuardar={() => {
+            // Todavía no persiste: falta la acción de servidor.
+            toast.info('Falta guardar: la acción de servidor viene después.')
+          }}
+        />
+      ) : null}
 
       {porGuardar ? (
         <PanelDibujo
@@ -401,6 +478,8 @@ export function VistaMapa({
       <FichaMapa
         marcador={seleccionado}
         onCerrar={() => setSeleccionado(undefined)}
+        puedeCalzarImagen={puedeCalzarImagen}
+        onCalzarImagen={(farmId, archivo) => void elegirImagen(archivo, farmId)}
         tope={tope}
         onTope={setTope}
         dibujosDeLaFinca={

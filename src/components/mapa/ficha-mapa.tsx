@@ -3,6 +3,7 @@
 import {
   Building2,
   Droplet,
+  ImagePlus,
   MapPin,
   Minus,
   Pentagon,
@@ -96,6 +97,8 @@ export function FichaMapa({
   onCerrar,
   onColocarPozo,
   onDibujar,
+  puedeCalzarImagen = false,
+  onCalzarImagen,
   dibujosDeLaFinca,
   onAbrirDibujo,
   tope,
@@ -112,6 +115,9 @@ export function FichaMapa({
     nombreFinca: string
   }) => void
   onDibujar: (de: { farmId: string; wellId: string | null }, forma: Forma) => void
+  /** Solo el admin calza imágenes, y solo sobre una finca. */
+  puedeCalzarImagen?: boolean
+  onCalzarImagen?: (farmId: string, archivo: File) => void
   /** Los dibujos de la finca abierta, para listarlos. */
   dibujosDeLaFinca: AnotacionMapa[]
   /** Abrir uno para verlo, corregirlo o borrarlo. */
@@ -350,6 +356,52 @@ export function FichaMapa({
                         </button>
                       ))}
                     </div>
+                  </section>
+                ) : null}
+
+                {/* Calzar una imagen. Va en la ficha y no entre los botones
+                    flotantes del mapa: al elegir una finca la ficha los tapa,
+                    así que un botón ahí arriba no se puede alcanzar nunca.
+                    Además la imagen es de la finca, y acá es donde viven sus
+                    acciones. Solo en la finca: una captura satelital abarca
+                    campo, no un cabezal de pozo. */}
+                {puedeCalzarImagen && esFinca ? (
+                  <section className="mt-5">
+                    <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
+                      Imagen propia
+                    </h3>
+                    <p className="text-muted-foreground mb-3 text-xs">
+                      La foto satelital del mapa es de 2023. Si tenés una más nueva, calzala
+                      encima.
+                    </p>
+
+                    {/* Un label con el input adentro, y no un botón que
+                        dispare un click por código: el clic programático abre
+                        un diálogo nativo que ni los tests ni algunos
+                        navegadores manejan bien. Así además el farmId sale de
+                        acá, que es donde se sabe, sin pasar por un ref. */}
+                    <label
+                      data-calzar-imagen="true"
+                      className="hover:bg-accent focus-within:ring-ring flex w-full cursor-pointer flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors focus-within:ring-3"
+                    >
+                      <ImagePlus className="text-muted-foreground size-4" />
+                      <span className="text-sm font-medium">Calzar una imagen</span>
+                      <span className="text-muted-foreground text-xs">
+                        Una captura del servicio satelital, alineada sobre el terreno.
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const archivo = e.target.files?.[0]
+                          if (archivo) onCalzarImagen?.(marcador.farmId, archivo)
+                          // Para que elegir el mismo archivo dos veces
+                          // seguidas vuelva a disparar change.
+                          e.target.value = ''
+                        }}
+                      />
+                    </label>
                   </section>
                 ) : null}
 

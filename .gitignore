@@ -57,3 +57,7 @@ next-env.d.ts
 /public/maplibre
 skill-observations/
 spike-imagen-mapa.png
+ver-*.png
+ver.txt
+cal.txt
+salida-*.txt
