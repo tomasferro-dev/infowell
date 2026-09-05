@@ -92,3 +92,65 @@ export function mimeImagenPermitido(mime: string): boolean {
 export function extensionDeImagen(mime: string): string {
   return MIMES_IMAGEN[tipoBase(mime)] ?? 'bin'
 }
+
+/**
+ * Qué se puede subir, de qué tipo, y con qué permiso.
+ *
+ * Es una tabla y no una cadena de ternarios a propósito: con dos tipos un
+ * `esAudio ? a : b` alcanzaba, con tres deja de leerse y se vuelve el lugar
+ * ideal para un error silencioso. Y lo que se decide acá es permiso: si una
+ * imagen del mapa pidiera el recurso `receipt`, la podría subir el cargador,
+ * que no debe tocarla.
+ *
+ * Separada de la ruta HTTP para poder probarla sin levantar un servidor.
+ */
+
+export const TIPOS_DE_SUBIDA = ['nota-voz', 'remito', 'imagen-mapa'] as const
+
+export type TipoDeSubida = (typeof TIPOS_DE_SUBIDA)[number]
+
+type ConfiguracionDeSubida = {
+  /** El recurso contra el que se pide permiso de escritura (ver authz.ts). */
+  recurso: 'observation' | 'receipt' | 'overlay'
+  bucket: string
+  permite: (mime: string) => boolean
+  extension: (mime: string) => string
+}
+
+export const SUBIDAS: Record<TipoDeSubida, ConfiguracionDeSubida> = {
+  'nota-voz': {
+    recurso: 'observation',
+    bucket: BUCKET_NOTAS_VOZ,
+    permite: mimeAudioPermitido,
+    extension: extensionDeMime,
+  },
+  remito: {
+    recurso: 'receipt',
+    bucket: BUCKET_REMITOS,
+    permite: mimeImagenPermitido,
+    extension: extensionDeImagen,
+  },
+  'imagen-mapa': {
+    recurso: 'overlay',
+    bucket: BUCKET_MAPA,
+    permite: mimeImagenPermitido,
+    extension: extensionDeImagen,
+  },
+}
+
+/**
+ * De qué recurso es un bucket, para la ruta que SIRVE los archivos.
+ *
+ * Se deriva de SUBIDAS y no es una segunda tabla: dos tablas paralelas se
+ * desincronizan, y acá desincronizarse significa servirle a alguien un archivo
+ * que no le corresponde.
+ *
+ * Devuelve `null` ante un bucket desconocido en vez de un recurso por defecto:
+ * quien llama tiene que decidir, y lo único correcto es no servir nada.
+ */
+export function recursoDeBucket(bucket: string): ConfiguracionDeSubida['recurso'] | null {
+  for (const tipo of TIPOS_DE_SUBIDA) {
+    if (SUBIDAS[tipo].bucket === bucket) return SUBIDAS[tipo].recurso
+  }
+  return null
+}

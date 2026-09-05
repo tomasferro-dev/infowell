@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { SUBIDAS, TIPOS_DE_SUBIDA } from '@/lib/storage-paths'
+
 import { limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
 
 /**
@@ -217,13 +219,61 @@ test.describe('endpoints de archivos', () => {
   test('no se puede leer un archivo de una finca ajena por ningún bucket', async ({ page }) => {
     await login(page, `${marca}-cliente@test.local`)
 
-    for (const bucket of ['remitos', 'notas-voz']) {
+    // Derivado de la tabla y NO escrito a mano: con una lista fija, el día que
+    // se agrega un bucket queda fuera de la auditoría sin que nadie se entere.
+    const buckets = TIPOS_DE_SUBIDA.map((t) => SUBIDAS[t].bucket)
+
+    // Que el bucle recorra algo. Sin esto, una lista vacía daría verde sin
+    // haber comprobado un solo bucket — el test más peligroso es el que pasa
+    // porque no probó nada.
+    expect(buckets).toContain('mapa')
+    expect(buckets.length).toBeGreaterThanOrEqual(3)
+
+    for (const bucket of buckets) {
       const r = await page.request.get(
         `/api/files/${bucket}/${datos.fincaAjenaId}/algo/archivo.jpg`,
         { maxRedirects: 0 },
       )
       expect(r.status(), bucket).toBe(404)
     }
+  })
+
+  /**
+   * El cargador escribe remitos y anda por la ruta. Sacar una captura del
+   * servicio satelital es tarea de oficina, así que la imagen del mapa no la
+   * sube — y esto lo comprueba en su PROPIA finca, que es donde un permiso mal
+   * puesto se colaría sin que se note.
+   */
+  test('el cargador no obtiene firma para una imagen del mapa, ni en su finca', async ({
+    page,
+  }) => {
+    await login(page, `${marca}-cargador@test.local`)
+
+    const r = await page.request.post('/api/uploads/sign', {
+      data: {
+        tipo: 'imagen-mapa',
+        farmId: datos.fincaPropiaId,
+        recursoId: 'x',
+        mimeType: 'image/jpeg',
+      },
+    })
+
+    expect(r.status()).toBe(404)
+  })
+
+  test('el cliente tampoco, obviamente', async ({ page }) => {
+    await login(page, `${marca}-cliente@test.local`)
+
+    const r = await page.request.post('/api/uploads/sign', {
+      data: {
+        tipo: 'imagen-mapa',
+        farmId: datos.fincaPropiaId,
+        recursoId: 'x',
+        mimeType: 'image/jpeg',
+      },
+    })
+
+    expect(r.status()).toBe(404)
   })
 
   test('un bucket inventado no existe', async ({ page }) => {

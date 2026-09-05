@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { BUCKET_NOTAS_VOZ, BUCKET_REMITOS, interpretarRuta } from '@/lib/storage-paths'
+import { interpretarRuta, recursoDeBucket } from '@/lib/storage-paths'
 import { authorize } from '@/server/authz'
 import { getActor } from '@/server/guards'
 import { crearUrlDeLectura } from '@/server/storage'
@@ -13,15 +13,16 @@ import { crearUrlDeLectura } from '@/server/storage'
  * invalidaría los enlaces que ya tiene.
  */
 
-const BUCKETS_VALIDOS = new Set([BUCKET_REMITOS, BUCKET_NOTAS_VOZ])
-
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ bucket: string; ruta: string[] }> },
 ) {
   const { bucket, ruta } = await params
 
-  if (!BUCKETS_VALIDOS.has(bucket)) {
+  // Bucket desconocido: no se sirve nada. Sale de la misma tabla que las
+  // subidas, así que agregar un bucket no deja esta ruta atrás.
+  const recurso = recursoDeBucket(bucket)
+  if (!recurso) {
     return NextResponse.json({ error: 'No encontrado' }, { status: 404 })
   }
 
@@ -33,8 +34,6 @@ export async function GET(
 
   // Ruta malformada o con salto de directorio: no se devuelve nada.
   if (!partes) return NextResponse.json({ error: 'No encontrado' }, { status: 404 })
-
-  const recurso = bucket === BUCKET_NOTAS_VOZ ? 'observation' : 'receipt'
 
   if (!authorize(actor, 'read', recurso, partes.farmId)) {
     return NextResponse.json({ error: 'No encontrado' }, { status: 404 })

@@ -1,15 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import {
-  BUCKET_NOTAS_VOZ,
-  BUCKET_REMITOS,
-  construirRuta,
-  extensionDeImagen,
-  extensionDeMime,
-  mimeAudioPermitido,
-  mimeImagenPermitido,
-} from '@/lib/storage-paths'
+import { SUBIDAS, TIPOS_DE_SUBIDA, construirRuta } from '@/lib/storage-paths'
 import { authorize } from '@/server/authz'
 import { getActor } from '@/server/guards'
 import { crearUrlDeSubida } from '@/server/storage'
@@ -23,7 +15,7 @@ import { crearUrlDeSubida } from '@/server/storage'
  */
 
 const cuerpoSchema = z.object({
-  tipo: z.enum(['nota-voz', 'remito']),
+  tipo: z.enum(TIPOS_DE_SUBIDA),
   farmId: z.string().min(1),
   /** Pozo o remito al que pertenece. Solo agrupa: el permiso sale del farmId. */
   recursoId: z.string().min(1),
@@ -41,24 +33,22 @@ export async function POST(request: Request) {
 
   const { tipo, farmId, recursoId, mimeType } = parsed.data
 
-  // Cada tipo de archivo cuelga de un recurso distinto, y el permiso también:
-  // el cargador puede escribir remitos pero no notas de voz.
-  const recurso = tipo === 'nota-voz' ? 'observation' : 'receipt'
+  // Cada tipo cuelga de un recurso, un bucket y una lista de mimes distintos.
+  // La tabla vive en storage-paths.ts y está cubierta por sus tests: acá solo
+  // se la consulta.
+  const config = SUBIDAS[tipo]
 
-  if (!authorize(actor, 'write', recurso, farmId)) {
+  if (!authorize(actor, 'write', config.recurso, farmId)) {
     // 404 y no 403: no se confirma que la finca exista.
     return NextResponse.json({ error: 'No encontrado' }, { status: 404 })
   }
 
-  const esAudio = tipo === 'nota-voz'
-  const permitido = esAudio ? mimeAudioPermitido(mimeType) : mimeImagenPermitido(mimeType)
-
-  if (!permitido) {
+  if (!config.permite(mimeType)) {
     return NextResponse.json({ error: 'Tipo de archivo no permitido' }, { status: 400 })
   }
 
-  const bucket = esAudio ? BUCKET_NOTAS_VOZ : BUCKET_REMITOS
-  const ext = esAudio ? extensionDeMime(mimeType) : extensionDeImagen(mimeType)
+  const bucket = config.bucket
+  const ext = config.extension(mimeType)
 
   try {
     const ruta = construirRuta({ farmId, recursoId, ext })
