@@ -85,17 +85,19 @@ privados y los datos de demostración.
 ```
 tsc              0 errores
 eslint           0 errores
-vitest           168 tests unitarios
-playwright       302 pasan, 2 salteados, 0 fallan  — 17,2 min
+vitest           206 tests unitarios
+playwright       308 pasan, 2 salteados, 4 por contención  — 20,7 min
 build sin .env   compila
 ```
 
 Los e2e son 152 declarados × 2 viewports, menos los que se saltean a propósito
 (los que tocan ajustes globales corren en un solo proyecto — ver §9).
 
-Una corrida anterior tuvo dos caídas por `toBeVisible` agotando el tiempo que
-pasaron solas con `--workers=1`: es contención del plan gratuito y §9 explica
-cómo distinguirla de una regresión.
+Los cuatro que fallaron son de `dibujos.spec.ts` y **pasan los seis** corridos
+solos con `--workers=1`: es contención del plan gratuito, y §9 explica cómo
+distinguirla de una regresión. Vale comprobarlo aunque las caídas no sean del
+código que uno tocó: las imágenes del mapa agregan capas, y esos tests arrastran
+vértices sobre el mapa.
 
 ---
 
@@ -574,9 +576,11 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 |---|---|
 | **Historial en el respaldo** | Hoy lleva fincas, pozos y dibujos. Las intervenciones y mediciones no. Ver §11. |
 | **Cola de subida offline** | IndexedDB + Background Sync. Diferido a propósito: si falla en silencio, el operario cree que guardó y no guardó. Es una fase propia. |
-| **Limpieza de archivos huérfanos** | Si alguien graba un audio y abandona el formulario, el archivo queda en el bucket sin fila. |
+| **Limpieza de archivos huérfanos** | Si alguien graba un audio y abandona el formulario, el archivo queda en el bucket sin fila. Lo mismo con una imagen del mapa que se sube y después se borra: el borrado es suave y el archivo queda. |
 | **Desactivar una finca** | No existe. La única acción parecida (`archivarFincaAction`) hace un borrado suave y ni siquiera está conectada a ninguna pantalla. Una finca «apagada pero visible» es otra cosa y hay que construirla. |
 | **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
+| **Administrar las imágenes calzadas** | Se suben, se calzan y se ven, pero todavía no hay pantalla para listarlas, renombrarlas, apagarlas ni borrarlas. La acción de borrado existe (`borrarImagenMapaAction`) y no está conectada a nada. Ver §11. |
+| **Las imágenes en el respaldo** | El respaldo lleva la fila pero no el archivo, así que restaurar dejaría imágenes rotas. Hay que decidir si se incluyen los archivos o si se excluyen las imágenes y se dice explícitamente. |
 
 ### Lo que necesita acción del usuario
 
@@ -652,6 +656,61 @@ alguien busca ubicarse por referencias que la foto todavía no tiene.
 ⚠️ **Cambiar de proveedor no arregla esto.** Esri está en 2023 sobre la misma
 zona: se cambiaría por lo mismo. La salida, si alguna vez molesta de verdad, es
 dejar que el usuario suba su propia imagen sobre el mapa —ver §10—.
+
+### Calzar una imagen propia
+
+La imagen satelital es de 2023, y eso no se arregla cambiando de proveedor
+(arriba). La salida es que el usuario suba la suya: la empresa tiene un
+servicio con imagen más nueva, pero **solo permite sacar capturas de
+pantalla**, sin georreferenciar. O sea que las coordenadas no vienen en el
+archivo y las tiene que poner alguien.
+
+**La imagen queda clavada a la PANTALLA y el mapa se mueve por debajo.** Es el
+mismo principio que el modo colocación de un pozo, y por la misma razón: si se
+arrastrara la imagen con el dedo, el dedo taparía justo la referencia contra la
+que se la está alineando.
+
+El regalo de hacerlo así es que las tres transformaciones salen gratis y con
+gestos que el usuario ya sabe: arrastrar mueve la imagen contra el terreno,
+acercar la escala, girar la gira. Sin manijas diminutas que apuntar con
+guantes, y sin pelear contra los gestos del mapa.
+
+Al soltar se guardan los cuatro vértices en lon/lat. Se calculan con
+`map.unproject` sobre píxeles de pantalla y **nunca** sumando grados: en Mendoza
+un grado de longitud mide bastante menos que uno de latitud, así que la
+aritmética en grados deforma la imagen. Y si el mapa está girado, `unproject`
+devuelve el cuadrilátero girado sin que haya que calcularlo.
+
+⚠️ **`ImageSourceSpecification` exige `url` obligatorio.** La opción `image`
+—un bitmap ya decodificado— existe solo en `updateImage()`, no al crear la
+fuente. Se usa un `blob:` URL, que pertenece al PROPIO origen: así el archivo
+privado, que llega por un redirect a Supabase, nunca depende de las cabeceras
+CORS de otro dominio para llegar a una textura de WebGL.
+
+**Las capas no se elevan.** `elevarCapas` sube los dibujos en cada `styledata`,
+así que la imagen queda debajo de ellos sola. Un dibujo tapado por una foto
+sería una regresión que nadie reporta: simplemente el dibujo «no está».
+
+**El botón vive dentro de la ficha de la finca, no entre los botones flotantes
+del mapa.** Al elegir una finca la ficha los tapa, así que uno ahí arriba no se
+puede alcanzar nunca. Además la imagen es de la finca, y la ficha es donde
+viven sus acciones. Es un `label` con el input adentro y no un botón que
+dispare un click por código: el clic programático abre un diálogo nativo que ni
+los tests ni algunos navegadores manejan bien.
+
+**El archivo se sube ANTES de crear la fila.** Al revés, un fallo de subida
+dejaría un registro apuntando a un archivo que no existe y el mapa mostraría un
+hueco sin explicación. Lo peor que queda así es un archivo huérfano, que no se
+ve — y limpiarlos ya era un pendiente (§10).
+
+**La ruta del archivo se comprueba contra la finca** (`rutaEsDeLaFinca`). La
+manda el navegador, y la ruta de lectura firma contra el farmId de la RUTA, no
+el de la fila: sin ese control, alguien podría guardar una fila propia
+apuntando a la carpeta de otra finca y leer lo ajeno con permiso propio.
+
+**`MapOverlay.farmId` es obligatorio**, al revés de `MapAnnotation.farmId`. Una
+imagen suelta sería el terreno de una finca visible sin dueño, y los dibujos
+sueltos ya dejaron su lección.
 
 ### Decisiones que no conviene revertir
 

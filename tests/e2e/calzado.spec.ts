@@ -161,3 +161,56 @@ test.describe('calzar una imagen', () => {
     expect(await posicionEnPantalla(page)).toEqual(antes)
   })
 })
+
+test.describe('guardar la imagen calzada', () => {
+  test('se sube, se guarda, y sigue en el mapa al volver a entrar', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await page.locator(`.marcador-mapa[data-id="${datos.fincaPropiaId}"]`).click()
+
+    await page
+      .locator('[data-calzar-imagen] input[type="file"]')
+      .setInputFiles('tests/e2e/fixtures-imagen-mapa.png')
+    await expect(page.getByText('Calzar la imagen')).toBeVisible()
+
+    // Mover el mapa: así las esquinas que se guardan no son las de arranque.
+    await page.evaluate(() => {
+      const mapa = (window as unknown as { __mapa?: import('maplibre-gl').Map }).__mapa
+      mapa?.jumpTo({ center: [mapa.getCenter().lng + 0.004, mapa.getCenter().lat] })
+    })
+    await page.waitForTimeout(300)
+
+    const alGuardar = await posicionEnPantalla(page)
+    expect(alGuardar, 'la imagen tiene que estar montada').not.toBeNull()
+
+    await page.getByRole('button', { name: 'Guardar' }).click()
+    await expect(page.getByText('Imagen guardada sobre el terreno.')).toBeVisible({
+      timeout: 30_000,
+    })
+
+    // El panel se fue: el modo terminó.
+    await expect(page.getByText('Calzar la imagen')).toBeHidden()
+
+    // Y acá lo que de verdad importa: entrar de nuevo y que siga estando.
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+
+    const guardadas = await page.evaluate(async () => {
+      const mapa = (window as unknown as { __mapa?: import('maplibre-gl').Map }).__mapa
+      if (!mapa) return null
+
+      // La imagen se baja con fetch antes de dibujarse, así que se espera.
+      for (let i = 0; i < 40; i++) {
+        const capas = mapa
+          .getStyle()
+          .layers.filter((c) => c.id.startsWith('imagen-guardada-'))
+        if (capas.length > 0) return capas.map((c) => c.id)
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      return []
+    })
+
+    expect(guardadas, 'la imagen guardada tiene que dibujarse al volver').toHaveLength(1)
+  })
+})

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { rectanguloInicial } from '@/lib/imagen-mapa'
+import { rectanguloInicial, rutaEsDeLaFinca } from '@/lib/imagen-mapa'
 
 /**
  * Dónde arranca la imagen en la pantalla cuando se entra a calzarla.
@@ -125,5 +125,44 @@ describe('el espacio que tapa el panel', () => {
     expect(r.ancho).toBeGreaterThan(0)
     expect(r.alto).toBeGreaterThan(0)
     expect(Number.isFinite(r.y)).toBe(true)
+  })
+})
+
+describe('la ruta del archivo tiene que ser de esa finca', () => {
+  /**
+   * La ruta la manda el navegador. Sin este control, alguien que puede
+   * escribir su propia finca podría guardar un MapOverlay apuntando a la
+   * carpeta de otra: la fila diría que es suya y el archivo sería ajeno, y la
+   * ruta de lectura firmaría contra el farmId de la ruta, no el de la fila.
+   */
+  it('acepta una ruta cuyo primer segmento es la finca', () => {
+    expect(rutaEsDeLaFinca('finca-a/img-1/abc.png', 'finca-a')).toBe(true)
+  })
+
+  it('RECHAZA la ruta de otra finca', () => {
+    expect(rutaEsDeLaFinca('finca-b/img-1/abc.png', 'finca-a')).toBe(false)
+  })
+
+  it('rechaza rutas malformadas o con salto de directorio', () => {
+    for (const ruta of [
+      '',
+      '/finca-a/img/abc.png',
+      'finca-a/abc.png',
+      '../finca-b/img/abc.png',
+      'finca-a/../finca-b/img/abc.png',
+      'finca-a\img\abc.png',
+    ]) {
+      expect(rutaEsDeLaFinca(ruta, 'finca-a'), ruta).toBe(false)
+    }
+  })
+
+  it('rechaza si falta la finca', () => {
+    expect(rutaEsDeLaFinca('finca-a/img/abc.png', '')).toBe(false)
+  })
+
+  /** Un prefijo que se parece no alcanza: tiene que ser el segmento entero. */
+  it('no se conforma con que la ruta empiece parecido', () => {
+    expect(rutaEsDeLaFinca('finca-a2/img/abc.png', 'finca-a')).toBe(false)
+    expect(rutaEsDeLaFinca('finca-a/img/abc.png', 'finca-a2')).toBe(false)
   })
 })

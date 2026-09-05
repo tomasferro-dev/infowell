@@ -14,7 +14,10 @@ export default async function MapaPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   // El acotamiento vive en la query: un CLIENTE solo recibe sus fincas.
-  const [{ marcadores, anotaciones, sinUbicar, puedeMarcarSueltos, puedeCalzarImagen }, query] =
+  const [
+    { marcadores, anotaciones, imagenes, sinUbicar, puedeMarcarSueltos, puedeCalzarImagen },
+    query,
+  ] =
     await Promise.all([
     puntosDelMapa(),
     searchParams,
@@ -60,6 +63,7 @@ export default async function MapaPage({
           <VistaMapa
             marcadores={marcadores}
             anotaciones={anotaciones}
+            imagenes={imagenes}
             sinUbicar={sinUbicar}
             puedeMarcarSueltos={puedeMarcarSueltos}
             puedeCalzarImagen={puedeCalzarImagen}

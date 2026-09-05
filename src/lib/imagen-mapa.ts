@@ -1,4 +1,5 @@
 import { esPunto, type Punto } from '@/lib/anotaciones'
+import { interpretarRuta } from '@/lib/storage-paths'
 
 /**
  * La imagen que el usuario calza sobre el mapa satelital.
@@ -105,4 +106,24 @@ export function rectanguloInicial({
     ancho: anchoFinal,
     alto: altoFinal,
   }
+}
+
+/**
+ * Si una ruta de Storage pertenece a esa finca.
+ *
+ * La ruta la manda el navegador cuando pide guardar. Sin este control, alguien
+ * que puede escribir su propia finca podría grabar una imagen apuntando a la
+ * carpeta de otra: la fila diría que es suya y el archivo sería ajeno. Peor
+ * todavía, la ruta de lectura firma contra el farmId de la RUTA, no el de la
+ * fila, así que sería una forma de leer lo ajeno con permiso propio.
+ *
+ * Reusa `interpretarRuta`, que ya rechaza el salto de directorio y valida los
+ * segmentos: una segunda implementación de esa validación sería una segunda
+ * oportunidad de equivocarse.
+ */
+export function rutaEsDeLaFinca(ruta: string, farmId: string): boolean {
+  if (!farmId) return false
+
+  const partes = interpretarRuta(ruta)
+  return partes !== null && partes.farmId === farmId
 }

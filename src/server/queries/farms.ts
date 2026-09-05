@@ -254,6 +254,27 @@ export async function puntosDelMapa() {
     },
   })
 
+  /*
+   * Las imágenes calzadas sobre el terreno.
+   *
+   * Mismo cerco que los dibujos, con una diferencia: NUNCA hay sueltas. Una
+   * imagen siempre cuelga de una finca, así que basta el scope — y por eso no
+   * hay un `OR` con `farmId: null` como en los dibujos.
+   */
+  const imagenes = await prisma.mapOverlay.findMany({
+    where: { deletedAt: null, visible: true, farm: { ...scope, deletedAt: null } },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      farmId: true,
+      etiqueta: true,
+      rutaArchivo: true,
+      esquinas: true,
+      opacidad: true,
+      farm: { select: { name: true } },
+    },
+  })
+
   /**
    * Lo que todavía no está en el mapa, con nombre y con adónde ir a marcarlo.
    *
@@ -391,6 +412,7 @@ export async function puntosDelMapa() {
   return {
     marcadores,
     anotaciones,
+    imagenes,
     sinUbicar,
     // Si puede marcar referencias que no cuelgan de ninguna finca. Es interno:
     // el cliente ni las ve. Ver `authz.ts`.
@@ -415,3 +437,5 @@ export async function puntosDelMapa() {
 export type AnotacionMapa = Awaited<ReturnType<typeof puntosDelMapa>>['anotaciones'][number]
 
 export type MarcadorMapa = Awaited<ReturnType<typeof puntosDelMapa>>['marcadores'][number]
+
+export type ImagenMapa = Awaited<ReturnType<typeof puntosDelMapa>>['imagenes'][number]

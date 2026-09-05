@@ -1,8 +1,9 @@
 'use client'
 
+import imageCompression from 'browser-image-compression'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { AvisoSinUbicar, type SinUbicar } from '@/components/mapa/aviso-sin-ubicar'
@@ -10,13 +11,15 @@ import { FichaMapa, TOPES, TOPE_QUE_SIGUE_EL_MAPA } from '@/components/mapa/fich
 import { PanelDibujo, type DatosDibujo } from '@/components/mapa/panel-dibujo'
 import { PanelImagen } from '@/components/mapa/panel-imagen'
 import { esClaveColor, type ClaveColor, type Forma } from '@/lib/anotaciones'
-import { OPACIDAD_POR_DEFECTO, type Esquinas } from '@/lib/imagen-mapa'
+import { OPACIDAD_POR_DEFECTO, esEsquinas, type Esquinas } from '@/lib/imagen-mapa'
+import { describirFalloDeFirma } from '@/lib/subidas'
 import { destinoDeColocacion, type ModoColocacion } from '@/lib/colocacion-mapa'
 import {
   borrarAnotacionAction,
   guardarAnotacionAction,
 } from '@/server/actions/anotaciones'
-import type { AnotacionMapa } from '@/server/queries/farms'
+import { guardarImagenMapaAction } from '@/server/actions/imagenes-mapa'
+import type { AnotacionMapa, ImagenMapa } from '@/server/queries/farms'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { MarcadorMapa } from '@/server/queries/farms'
 
@@ -65,6 +68,7 @@ type Colocando = {
 export function VistaMapa({
   marcadores,
   anotaciones,
+  imagenes,
   sinUbicar,
   puedeMarcarSueltos,
   puedeCalzarImagen = false,
@@ -76,6 +80,8 @@ export function VistaMapa({
 }: {
   marcadores: MarcadorMapa[]
   anotaciones: AnotacionMapa[]
+  /** Las imágenes ya calzadas sobre el terreno. */
+  imagenes: ImagenMapa[]
   sinUbicar: SinUbicar[]
   /** Si el actor puede marcar referencias que no cuelgan de ninguna finca. */
   puedeMarcarSueltos: boolean
@@ -210,6 +216,23 @@ export function VistaMapa({
     archivo: File
   }>()
   const [opacidadCalzado, setOpacidadCalzado] = useState(OPACIDAD_POR_DEFECTO)
+
+  /**
+   * Las esquinas vienen de un Json, así que se validan antes de dibujar.
+   * Una fila con esquinas rotas se saltea en vez de tumbar el mapa entero.
+   */
+  const imagenesParaElMapa = useMemo(
+    () =>
+      imagenes
+        .filter((i) => esEsquinas(i.esquinas))
+        .map((i) => ({
+          id: i.id,
+          rutaArchivo: i.rutaArchivo,
+          esquinas: i.esquinas as Esquinas,
+          opacidad: i.opacidad,
+        })),
+    [imagenes],
+  )
   const esquinasActuales = useRef<Esquinas>(undefined)
 
   const salirDelCalzado = () => {
@@ -219,6 +242,85 @@ export function VistaMapa({
     })
     setOpacidadCalzado(OPACIDAD_POR_DEFECTO)
     esquinasActuales.current = undefined
+  }
+
+  /**
+   * Sube la imagen y guarda dónde quedó.
+   *
+   * El archivo va primero y la fila después: si se guardara la fila primero y
+   * fallara la subida, quedaría un registro apuntando a un archivo que no
+   * existe, y el mapa mostraría un hueco sin explicación. Al revés, lo peor
+   * que queda es un archivo huérfano en el bucket, que no se ve.
+   */
+  const guardarImagen = async () => {
+    if (!calzando) return
+
+    const esquinas = esquinasActuales.current
+    if (!esquinas) {
+      toast.error('Todavía no sé dónde quedó la imagen. Mové el mapa y probá de nuevo.')
+      return
+    }
+
+    setGuardando(true)
+
+    try {
+      // 2000px y no los 1600 de un remito: un remito se lee, una imagen del
+      // mapa se compara contra el terreno, y ahí el detalle es el punto.
+      // Comprimir NO cambia la proporción, así que las esquinas siguen valiendo.
+      const comprimida = await imageCompression(calzando.archivo, {
+        maxSizeMB: 1.5,
+        maxWidthOrHeight: 2000,
+        useWebWorker: true,
+        fileType: 'image/jpeg',
+      })
+
+      const firma = await fetch('/api/uploads/sign', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'imagen-mapa',
+          farmId: calzando.farmId,
+          // La imagen todavía no tiene fila, así que su carpeta se nombra acá.
+          recursoId: crypto.randomUUID(),
+          mimeType: 'image/jpeg',
+        }),
+      })
+
+      if (!firma.ok) throw new Error(await describirFalloDeFirma(firma))
+      const { signedUrl, ruta } = await firma.json()
+
+      const cuerpo = new FormData()
+      cuerpo.append('cacheControl', '3600')
+      cuerpo.append('', comprimida)
+
+      const subida = await fetch(signedUrl, { method: 'PUT', body: cuerpo })
+      if (!subida.ok) {
+        throw new Error(`El servidor de archivos rechazó la imagen (${subida.status}).`)
+      }
+
+      const r = await guardarImagenMapaAction({
+        farmId: calzando.farmId,
+        rutaArchivo: ruta,
+        esquinas,
+        opacidad: opacidadCalzado,
+        etiqueta: calzando.nombre.replace(/\.[^.]+$/, ''),
+      })
+
+      if (!r.ok) {
+        toast.error(r.error)
+        return
+      }
+
+      salirDelCalzado()
+      toast.success('Imagen guardada sobre el terreno.')
+      router.refresh()
+    } catch (error) {
+      // La causa real: sin esto, un problema de configuración se ve igual que
+      // una imagen pesada o una señal mala.
+      toast.error(error instanceof Error ? error.message : 'No se pudo subir la imagen.')
+    } finally {
+      setGuardando(false)
+    }
   }
 
   /** Decodifica para saber la proporción: sin ella la imagen entra deformada. */
@@ -273,6 +375,7 @@ export function VistaMapa({
             puntos: dibujo.puntos,
           })
         }}
+        imagenesGuardadas={imagenesParaElMapa}
         calzando={calzando}
         opacidadCalzado={opacidadCalzado}
         onEsquinas={(esquinas) => {
@@ -367,10 +470,7 @@ export function VistaMapa({
           onOpacidad={setOpacidadCalzado}
           guardando={guardando}
           onCancelar={salirDelCalzado}
-          onGuardar={() => {
-            // Todavía no persiste: falta la acción de servidor.
-            toast.info('Falta guardar: la acción de servidor viene después.')
-          }}
+          onGuardar={() => void guardarImagen()}
         />
       ) : null}
 

@@ -20,6 +20,8 @@ import {
 import {
   esquinasDeRectangulo,
   montarImagen,
+  montarImagenesGuardadas,
+  type ImagenGuardada,
   moverImagen,
   opacidadImagen,
   quitarImagen,
@@ -208,6 +210,7 @@ export function Mapa({
   anotaciones,
   verAnotaciones,
   onVerAnotaciones,
+  imagenesGuardadas,
   calzando,
   opacidadCalzado = 0.8,
   onEsquinas,
@@ -253,6 +256,8 @@ export function Mapa({
   anotaciones: AnotacionMapa[]
   verAnotaciones: boolean
   onVerAnotaciones: (ver: boolean) => void
+  /** Las imágenes ya guardadas de las fincas que el actor puede ver. */
+  imagenesGuardadas?: ImagenGuardada[]
   /** La imagen que se está calzando, o undefined si no hay ninguna. */
   calzando?: Calzando
   opacidadCalzado?: number
@@ -307,6 +312,7 @@ export function Mapa({
   // la opacidad — recrearse significa devolver la imagen al centro de la
   // pantalla mientras alguien la está alineando.
   const alEsquinas = useRef(onEsquinas)
+  const imagenesActuales = useRef(imagenesGuardadas)
   const opacidadCalzadoActual = useRef(opacidadCalzado)
   useEffect(() => {
     alSeleccionar.current = onSeleccion
@@ -318,6 +324,7 @@ export function Mapa({
     dibujoActual.current = dibujando
     anotacionesActuales.current = anotaciones
     alEsquinas.current = onEsquinas
+    imagenesActuales.current = imagenesGuardadas
     opacidadCalzadoActual.current = opacidadCalzado
   })
 
@@ -691,6 +698,43 @@ export function Mapa({
       mapa.off('moveend', leerCentro)
     }
   }, [mapa, colocando])
+
+  /**
+   * Las imágenes ya guardadas.
+   *
+   * Se remontan cuando cambia la lista. La clave del efecto son los ids y no
+   * el arreglo: la consulta devuelve un arreglo nuevo en cada render y eso
+   * bajaría los archivos otra vez, en cada movimiento del mapa.
+   */
+  const clavesGuardadas = (imagenesGuardadas ?? []).map((i) => i.id).join(',')
+
+  useEffect(() => {
+    if (!mapa || !capasListas) return
+
+    const lista = imagenesActuales.current ?? []
+    if (lista.length === 0) return
+
+    let vigente = true
+    let limpiar: (() => void) | undefined
+
+    void montarImagenesGuardadas(mapa, lista, () => vigente).then((quitar) => {
+      // Si el efecto se desmontó mientras bajaban los archivos, lo montado
+      // hay que sacarlo igual: si no, quedan capas huérfanas al cambiar de
+      // vista y se van encimando.
+      if (!vigente) {
+        quitar()
+        return
+      }
+      limpiar = quitar
+      // Los dibujos vuelven arriba: una foto no puede tapar un dibujo.
+      elevarCapas(mapa)
+    })
+
+    return () => {
+      vigente = false
+      limpiar?.()
+    }
+  }, [mapa, capasListas, clavesGuardadas])
 
   /**
    * Modo calzado.

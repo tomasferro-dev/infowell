@@ -100,3 +100,74 @@ export function quitarImagen(mapa: maplibregl.Map) {
   if (mapa.getLayer(CAPA_IMAGEN)) mapa.removeLayer(CAPA_IMAGEN)
   if (mapa.getSource(FUENTE_IMAGEN)) mapa.removeSource(FUENTE_IMAGEN)
 }
+
+/** Una imagen ya guardada, tal como la necesita el mapa. */
+export type ImagenGuardada = {
+  id: string
+  rutaArchivo: string
+  esquinas: Esquinas
+  opacidad: number
+}
+
+const PREFIJO_GUARDADA = 'imagen-guardada-'
+
+/**
+ * Dibuja las imágenes ya guardadas.
+ *
+ * Cada archivo se baja con `fetch` y se convierte en un `blob:` URL antes de
+ * dárselo a MapLibre. No se le pasa la URL de la app directamente porque esa
+ * ruta redirige a Supabase —otro origen— y una textura de WebGL cruzada
+ * depende de las cabeceras CORS de un dominio que no controlamos. Un blob no
+ * tiene origen: siempre funciona.
+ *
+ * Devuelve la función de limpieza. Revocar los blobs importa: sin eso, cada
+ * visita al mapa deja las imágenes en memoria del navegador hasta recargar.
+ */
+export async function montarImagenesGuardadas(
+  mapa: maplibregl.Map,
+  imagenes: ImagenGuardada[],
+  /** Para abandonar si el efecto se desmontó mientras se bajaban los archivos. */
+  sigueVigente: () => boolean,
+): Promise<() => void> {
+  const urls: string[] = []
+  const ids: string[] = []
+
+  for (const imagen of imagenes) {
+    if (!sigueVigente()) break
+
+    try {
+      const respuesta = await fetch(`/api/files/mapa/${imagen.rutaArchivo}`)
+      if (!respuesta.ok) continue
+
+      const url = URL.createObjectURL(await respuesta.blob())
+      if (!sigueVigente()) {
+        URL.revokeObjectURL(url)
+        break
+      }
+
+      const id = PREFIJO_GUARDADA + imagen.id
+      urls.push(url)
+      ids.push(id)
+
+      mapa.addSource(id, { type: 'image', url, coordinates: imagen.esquinas })
+      mapa.addLayer({
+        id,
+        type: 'raster',
+        source: id,
+        paint: { 'raster-opacity': imagen.opacidad, 'raster-fade-duration': 0 },
+      })
+    } catch {
+      // Una imagen que no baja no puede llevarse el mapa puesto: se saltea y
+      // las demás se dibujan igual.
+      continue
+    }
+  }
+
+  return () => {
+    for (const id of ids) {
+      if (mapa.getLayer(id)) mapa.removeLayer(id)
+      if (mapa.getSource(id)) mapa.removeSource(id)
+    }
+    for (const url of urls) URL.revokeObjectURL(url)
+  }
+}
