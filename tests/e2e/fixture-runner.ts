@@ -262,6 +262,25 @@ async function borrarDibujos(marca: string) {
   return { borrados: count }
 }
 
+/**
+ * Deja la finca de la corrida sin imágenes calzadas.
+ *
+ * Igual que con los dibujos: los tests de imágenes trabajan sobre la MISMA
+ * finca, así que sin esto el segundo ve la del primero y el tercero ve dos.
+ * Un test que depende de lo que dejó otro falla por algo que no tenía nada que
+ * ver con lo que estaba probando.
+ *
+ * Borrado DURO y no suave: es limpieza de banco de pruebas, no una acción del
+ * usuario. Un borrado suave dejaría las filas contando para el próximo test.
+ */
+async function borrarImagenes(marca: string) {
+  const { count } = await prisma.mapOverlay.deleteMany({
+    where: { farm: { name: { contains: marca } } },
+  })
+
+  return { borradas: count }
+}
+
 async function main() {
   const [comando, marca] = process.argv.slice(2)
 
@@ -280,6 +299,8 @@ async function main() {
               ? await archivarFinca(marca)
               : comando === 'borrar-dibujos'
                 ? await borrarDibujos(marca)
+                : comando === 'borrar-imagenes'
+                  ? await borrarImagenes(marca)
             : await teardown(marca)
 
   // El spec lee esto por stdout.

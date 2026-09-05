@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test'
 
-import { limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
+import {
+  borrarImagenes,
+  escribir,
+  limpiarDatos,
+  login,
+  marca,
+  montarDatos,
+  type DatosTest,
+} from './helpers'
 
 /**
  * Calzar una imagen sobre el terreno.
@@ -24,6 +32,18 @@ test.beforeAll(() => {
 
 test.afterAll(() => {
   limpiarDatos(marca)
+})
+
+/**
+ * Cada test arranca sin imágenes.
+ *
+ * Todos trabajan sobre la MISMA finca, así que sin esto el segundo ve la que
+ * dejó el primero: las aserciones sobre cuántas capas hay dan de más, y un
+ * `[data-abrir-imagen]` que debería ser uno pasa a ser tres. Es la misma razon
+ * por la que los tests de dibujo empiezan con el mapa limpio.
+ */
+test.beforeEach(() => {
+  borrarImagenes(marca)
 })
 
 /**
@@ -212,5 +232,123 @@ test.describe('guardar la imagen calzada', () => {
     })
 
     expect(guardadas, 'la imagen guardada tiene que dibujarse al volver').toHaveLength(1)
+  })
+})
+
+/** Los ids de las capas de imagen que hay dibujadas ahora mismo. */
+async function capasDeImagen(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const mapa = (window as unknown as { __mapa?: import('maplibre-gl').Map }).__mapa
+    if (!mapa) return []
+    return mapa
+      .getStyle()
+      .layers.filter((c) => c.id.startsWith('imagen-guardada-'))
+      .map((c) => c.id)
+  })
+}
+
+/**
+ * Abre la ficha de la finca y la sube del todo.
+ *
+ * La lista de imágenes vive abajo, después de los pozos y de los dibujos, así
+ * que al tope por defecto queda fuera de la vista. Es la misma maniobra que
+ * necesitan las herramientas de dibujo — ver `abrirHerramientas` en
+ * dibujos.spec.ts—, o sea la interacción normal de la app y no una rareza del
+ * test: la ficha se arrastra hacia arriba.
+ */
+async function abrirFichaEntera(page: import('@playwright/test').Page, fincaId: string) {
+  await page.goto(`/mapa?punto=${fincaId}`)
+  await esperarMapa(page)
+
+  await page.locator(`.marcador-mapa[data-id="${fincaId}"]`).click()
+  await expect(page.locator('[data-vaul-drawer]')).toBeVisible()
+
+  const agarre = (await page.locator('[data-agarre="true"]').boundingBox())!
+  await page.mouse.move(agarre.x + agarre.width / 2, agarre.y + agarre.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(agarre.x + agarre.width / 2, agarre.y - 400, { steps: 14 })
+  await page.mouse.up()
+  await page.waitForTimeout(900)
+}
+
+/** Deja una imagen guardada sobre la finca propia y vuelve al mapa. */
+async function dejarUnaImagenGuardada(page: import('@playwright/test').Page, fincaId: string) {
+  await page.goto(`/mapa?punto=${fincaId}`)
+  await esperarMapa(page)
+  await page.locator(`.marcador-mapa[data-id="${fincaId}"]`).click()
+  await page
+    .locator('[data-calzar-imagen] input[type="file"]')
+    .setInputFiles('tests/e2e/fixtures-imagen-mapa.png')
+  await expect(page.getByText('Calzar la imagen')).toBeVisible()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByText('Imagen guardada sobre el terreno.')).toBeVisible({
+    timeout: 30_000,
+  })
+}
+
+test.describe('administrar las imágenes guardadas', () => {
+  test('se lista en la ficha, se apaga y deja de dibujarse', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await dejarUnaImagenGuardada(page, datos.fincaPropiaId)
+
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await expect
+      .poll(() => capasDeImagen(page), { timeout: 20_000 })
+      .toHaveLength(1)
+
+    await abrirFichaEntera(page, datos.fincaPropiaId)
+
+    // Aparece en la lista de la finca, con su nombre.
+    const fila = page.locator('[data-abrir-imagen]')
+    await expect(fila).toHaveCount(1)
+    await expect(fila).toContainText('fixtures-imagen-mapa')
+    await expect(fila).toContainText('Se ve en el mapa')
+
+    // Apagarla es un solo toque.
+    await page.locator('[data-prender-imagen]').click()
+
+    // Y deja de dibujarse: esto es lo que importa, no que cambie el rótulo.
+    await expect.poll(() => capasDeImagen(page), { timeout: 20_000 }).toHaveLength(0)
+
+    // Sigue en la lista, apagada: si desapareciera no habría cómo prenderla.
+    await expect(page.locator('[data-abrir-imagen]')).toContainText('Apagada')
+  })
+
+  test('se le cambia el nombre y queda', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await dejarUnaImagenGuardada(page, datos.fincaPropiaId)
+
+    await abrirFichaEntera(page, datos.fincaPropiaId)
+    await page.locator('[data-abrir-imagen]').click()
+
+    await expect(page.getByText('Imagen del terreno')).toBeVisible()
+    await escribir(page.locator('#guardada-etiqueta'), 'Vuelo de marzo')
+    await page.getByRole('button', { name: 'Guardar' }).click()
+
+    // Entrar de nuevo: el nombre nuevo tiene que estar en la base, no solo en
+    // la pantalla que ya lo tenía escrito.
+    await abrirFichaEntera(page, datos.fincaPropiaId)
+    await expect(page.locator('[data-abrir-imagen]')).toContainText('Vuelo de marzo')
+  })
+
+  test('se borra y desaparece del mapa y de la lista', async ({ page }) => {
+    await login(page, EMAIL_ADMIN!, CLAVE_ADMIN!)
+    await dejarUnaImagenGuardada(page, datos.fincaPropiaId)
+
+    await page.goto(`/mapa?punto=${datos.fincaPropiaId}`)
+    await esperarMapa(page)
+    await expect.poll(() => capasDeImagen(page), { timeout: 20_000 }).toHaveLength(1)
+
+    await abrirFichaEntera(page, datos.fincaPropiaId)
+    await page.locator('[data-abrir-imagen]').click()
+    await page.getByRole('button', { name: 'Borrar esta imagen' }).click()
+
+    await expect(page.getByText('Imagen borrada.')).toBeVisible({ timeout: 20_000 })
+    await expect.poll(() => capasDeImagen(page), { timeout: 20_000 }).toHaveLength(0)
+
+    // Y tampoco vuelve al recargar: el borrado quedó en la base.
+    await abrirFichaEntera(page, datos.fincaPropiaId)
+    await expect(page.locator('[data-abrir-imagen]')).toHaveCount(0)
   })
 })

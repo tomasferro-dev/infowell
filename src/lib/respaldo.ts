@@ -12,6 +12,10 @@ import { z } from 'zod'
  *   - Los REMITOS y las NOTAS DE VOZ, porque sus fotos y audios viven en el
  *     almacenamiento de archivos y un JSON no puede llevarlos. Restaurar solo
  *     la fila dejaría remitos que apuntan a fotos que no existen.
+ *   - Las IMÁGENES calzadas sobre el mapa, por lo mismo: la fila sabe dónde va
+ *     la imagen, pero la imagen es un archivo del bucket. Restaurar solo la
+ *     fila dejaría rectángulos vacíos sobre el terreno, que es peor que no
+ *     tener nada — el usuario vería un hueco y creería que el mapa se rompió.
  *   - El HISTORIAL de intervenciones y mediciones, que es mucho más volumen y
  *     no hace falta para el propósito de esto: dejar el mapa cargado.
  *   - Los USUARIOS y sus contraseñas.

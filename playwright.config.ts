@@ -11,7 +11,23 @@ import { cargarEntorno, exigirBaseDeDesarrollo } from './scripts/entorno'
 cargarEntorno()
 exigirBaseDeDesarrollo()
 
-const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3000'
+/**
+ * Los tests corren en SU PROPIO puerto, no en el 3000 del desarrollo.
+ *
+ * No es comodidad: es la segunda mitad de la traba de `exigirBaseDeDesarrollo`.
+ * `reuseExistingServer` hace que Playwright NO levante su servidor si ya hay
+ * algo escuchando, y `npm run dev` a secas carga solo el `.env`, que es
+ * producción. O sea que con el servidor de desarrollo abierto —lo normal
+ * mientras uno programa— los 300 tests, que crean y borran, iban a parar a la
+ * base del cliente. La traba compara los ARCHIVOS de entorno y pasaba en
+ * verde: no puede ver a qué base habla un servidor que ya estaba prendido.
+ *
+ * Con un puerto propio eso no puede pasar: ahí solo hay servidores que
+ * levantó Playwright, con `.env.test` encima.
+ */
+const PUERTO_E2E = 3100
+
+const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${PUERTO_E2E}`
 
 /**
  * Los flujos e2e se ejercitan en viewport móvil: la app es mobile-first y los
@@ -65,6 +81,9 @@ export default defineConfig({
     : {
         command: 'npm run dev',
         url: baseURL,
+        // Next respeta PORT. Se pasa por `env` y no en la línea de comandos
+        // para que funcione igual en Windows que en Linux.
+        env: { PORT: String(PUERTO_E2E) },
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },

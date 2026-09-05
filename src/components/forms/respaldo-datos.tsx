@@ -91,8 +91,9 @@ export function RespaldoDatos({
         <div className="text-muted-foreground space-y-1 text-xs">
           <p className="text-foreground font-medium">No es una copia completa</p>
           <p>
-            Quedan afuera los remitos y las notas de voz —sus fotos y audios no entran en un
-            archivo de texto—, el historial de intervenciones y mediciones, y los usuarios.
+            Quedan afuera los remitos, las notas de voz y las imágenes del mapa —sus fotos y
+            audios no entran en un archivo de texto—, el historial de intervenciones y
+            mediciones, y los usuarios.
           </p>
         </div>
       </div>

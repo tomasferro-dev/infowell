@@ -64,3 +64,6 @@ salida-*.txt
 full.txt
 dib.txt
 full.txt
+run-*.txt
+full-*.txt
+.ultima-corrida

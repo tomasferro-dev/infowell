@@ -73,6 +73,50 @@ export async function guardarImagenMapaAction(datos: {
   return { ok: true, id: creada.id }
 }
 
+/**
+ * Cambia el nombre, la opacidad o si se dibuja.
+ *
+ * Lo que no se toca acá son las esquinas: recalzar una imagen es volver a
+ * alinearla contra el terreno, y eso se hace en el mapa, no en un formulario.
+ */
+export async function actualizarImagenMapaAction(datos: {
+  id: string
+  farmId: string
+  etiqueta?: string
+  opacidad?: unknown
+  visible?: unknown
+}): Promise<ResultadoImagen> {
+  await requireAccess('write', 'overlay', datos.farmId)
+
+  const cambios: { etiqueta?: string | null; opacidad?: number; visible?: boolean } = {}
+
+  // `undefined` es «no lo mandes» y string vacío es «borá el nombre»: son
+  // cosas distintas y por eso se distinguen antes de armar el update.
+  if (datos.etiqueta !== undefined) cambios.etiqueta = texto(datos.etiqueta, 120)
+  if (esOpacidad(datos.opacidad)) cambios.opacidad = datos.opacidad
+  if (typeof datos.visible === 'boolean') cambios.visible = datos.visible
+
+  if (Object.keys(cambios).length === 0) {
+    return { ok: false, error: 'No hay nada para cambiar' }
+  }
+
+  /*
+   * El farmId va en el where junto al id: sin eso, alguien podría editar la
+   * imagen de otra finca pasando el farmId de la suya y el permiso daría bien.
+   * Es la misma regla que en los dibujos.
+   */
+  const cambiada = await prisma.mapOverlay.updateMany({
+    where: { id: datos.id, farmId: datos.farmId, deletedAt: null },
+    data: cambios,
+  })
+
+  if (cambiada.count === 0) return { ok: false, error: 'Esa imagen ya no está' }
+
+  revalidatePath('/mapa')
+
+  return { ok: true, id: datos.id }
+}
+
 export async function borrarImagenMapaAction(
   farmId: string,
   id: string,

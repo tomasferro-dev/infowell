@@ -30,7 +30,8 @@ function correrRunner(
   | 'notas-de-voz'
   | 'reset-ajustes'
   | 'archivar-finca'
-  | 'borrar-dibujos',
+  | 'borrar-dibujos'
+  | 'borrar-imagenes',
   marcaCorrida: string,
 ) {
   const salida = execFileSync('npx', ['tsx', RUNNER, comando, marcaCorrida], {
@@ -60,6 +61,11 @@ export function sembrarNotasDeVoz(marcaCorrida: string): { wellId: string; farmI
 /** Deja el mapa sin dibujos, para que cada test de dibujo arranque limpio. */
 export function borrarDibujos(marcaCorrida: string) {
   correrRunner('borrar-dibujos', marcaCorrida)
+}
+
+/** Deja la finca de la corrida sin imágenes calzadas. Ver fixture-runner. */
+export function borrarImagenes(marcaCorrida: string) {
+  return correrRunner('borrar-imagenes', marcaCorrida)
 }
 
 /** Archiva la finca propia, como lo haría el administrador. */

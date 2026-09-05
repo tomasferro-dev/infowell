@@ -3,6 +3,8 @@
 import {
   Building2,
   Droplet,
+  Eye,
+  EyeOff,
   ImagePlus,
   MapPin,
   Minus,
@@ -16,7 +18,7 @@ import { Drawer } from 'vaul'
 import { IndicadorEnlace } from '@/components/layout/indicador-enlace'
 import { Button } from '@/components/ui/button'
 import { COLORES, esClaveColor, NOMBRE_DE_FORMA, type Forma } from '@/lib/anotaciones'
-import type { AnotacionMapa, MarcadorMapa } from '@/server/queries/farms'
+import type { AnotacionMapa, ImagenMapa, MarcadorMapa } from '@/server/queries/farms'
 
 /**
  * Las cuatro maneras de dibujar.
@@ -99,6 +101,9 @@ export function FichaMapa({
   onDibujar,
   puedeCalzarImagen = false,
   onCalzarImagen,
+  imagenesDeLaFinca = [],
+  onAbrirImagen,
+  onPrenderImagen,
   dibujosDeLaFinca,
   onAbrirDibujo,
   tope,
@@ -118,6 +123,12 @@ export function FichaMapa({
   /** Solo el admin calza imágenes, y solo sobre una finca. */
   puedeCalzarImagen?: boolean
   onCalzarImagen?: (farmId: string, archivo: File) => void
+  /** Las imágenes calzadas sobre esta finca, prendidas y apagadas. */
+  imagenesDeLaFinca?: ImagenMapa[]
+  /** Abrir una para cambiarle el nombre, la opacidad o borrarla. */
+  onAbrirImagen?: (id: string) => void
+  /** Prender o apagar sin abrirla: es lo que más se usa y va a un toque. */
+  onPrenderImagen?: (id: string, visible: boolean) => void
   /** Los dibujos de la finca abierta, para listarlos. */
   dibujosDeLaFinca: AnotacionMapa[]
   /** Abrir uno para verlo, corregirlo o borrarlo. */
@@ -356,6 +367,57 @@ export function FichaMapa({
                         </button>
                       ))}
                     </div>
+                  </section>
+                ) : null}
+
+                {/* Las imágenes ya calzadas.
+                    El interruptor va en la fila y no adentro del panel: apagar
+                    una imagen para ver el satelital es lo que más se hace, y
+                    obligarla a pasar por dos pantallas la volvería molesta. */}
+                {puedeCalzarImagen && esFinca && imagenesDeLaFinca.length > 0 ? (
+                  <section className="mt-5">
+                    <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
+                      Imágenes sobre el terreno
+                    </h3>
+                    <ul className="divide-y rounded-md border">
+                      {imagenesDeLaFinca.map((i) => (
+                        <li key={i.id} className="flex items-center">
+                          <button
+                            type="button"
+                            data-prender-imagen={i.id}
+                            aria-pressed={i.visible}
+                            aria-label={
+                              i.visible
+                                ? `Apagar ${i.etiqueta ?? 'la imagen'}`
+                                : `Prender ${i.etiqueta ?? 'la imagen'}`
+                            }
+                            onClick={() => onPrenderImagen?.(i.id, !i.visible)}
+                            className="hover:bg-accent focus-visible:ring-ring flex size-11 shrink-0 items-center justify-center transition-colors focus-visible:ring-3 focus-visible:outline-none focus-visible:-outline-offset-2"
+                          >
+                            {i.visible ? (
+                              <Eye className="size-4" />
+                            ) : (
+                              <EyeOff className="text-muted-foreground size-4" />
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            data-abrir-imagen={i.id}
+                            onClick={() => onAbrirImagen?.(i.id)}
+                            className="hover:bg-accent min-w-0 flex-1 px-2 py-2.5 text-left transition-colors"
+                          >
+                            <span className="block truncate text-sm font-medium">
+                              {i.etiqueta ?? 'Imagen sin nombre'}
+                            </span>
+                            <span className="text-muted-foreground block truncate text-xs">
+                              {i.visible ? 'Se ve en el mapa' : 'Apagada'} ·{' '}
+                              {Math.round(i.opacidad * 100)}%
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </section>
                 ) : null}
 

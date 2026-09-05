@@ -702,11 +702,18 @@ export function Mapa({
   /**
    * Las imágenes ya guardadas.
    *
-   * Se remontan cuando cambia la lista. La clave del efecto son los ids y no
-   * el arreglo: la consulta devuelve un arreglo nuevo en cada render y eso
-   * bajaría los archivos otra vez, en cada movimiento del mapa.
+   * Se remontan cuando cambia la lista. La clave del efecto NO es el arreglo:
+   * la consulta devuelve uno nuevo en cada render y eso bajaría los archivos
+   * otra vez, en cada movimiento del mapa.
+   *
+   * Pero tampoco alcanza con los ids: cambiarle la opacidad a una imagen deja
+   * los ids iguales, y el efecto no volvería a correr — el cambio se guardaba
+   * en la base y el mapa seguía mostrando el valor viejo hasta recargar. Por
+   * eso la clave lleva también lo que se ve.
    */
-  const clavesGuardadas = (imagenesGuardadas ?? []).map((i) => i.id).join(',')
+  const clavesGuardadas = (imagenesGuardadas ?? [])
+    .map((i) => `${i.id}:${i.opacidad}`)
+    .join(',')
 
   useEffect(() => {
     if (!mapa || !capasListas) return

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { rectanguloInicial, rutaEsDeLaFinca } from '@/lib/imagen-mapa'
+import {
+  OPACIDAD_POR_DEFECTO,
+  imagenesDibujables,
+  rectanguloInicial,
+  rutaEsDeLaFinca,
+} from '@/lib/imagen-mapa'
 
 /**
  * Dónde arranca la imagen en la pantalla cuando se entra a calzarla.
@@ -164,5 +169,59 @@ describe('la ruta del archivo tiene que ser de esa finca', () => {
   it('no se conforma con que la ruta empiece parecido', () => {
     expect(rutaEsDeLaFinca('finca-a2/img/abc.png', 'finca-a')).toBe(false)
     expect(rutaEsDeLaFinca('finca-a/img/abc.png', 'finca-a2')).toBe(false)
+  })
+})
+
+describe('qué imágenes se dibujan', () => {
+  const base = {
+    id: 'i1',
+    rutaArchivo: 'finca-a/x/1.jpg',
+    esquinas: [
+      [-68.9, -33.03],
+      [-68.88, -33.03],
+      [-68.88, -33.05],
+      [-68.9, -33.05],
+    ],
+    opacidad: 0.8,
+    visible: true,
+  }
+
+  it('dibuja una imagen visible y bien formada', () => {
+    expect(imagenesDibujables([base])).toHaveLength(1)
+  })
+
+  /** Apagada existe y se administra, pero no se dibuja. */
+  it('NO dibuja una imagen apagada', () => {
+    expect(imagenesDibujables([{ ...base, visible: false }])).toHaveLength(0)
+  })
+
+  /**
+   * Las esquinas vienen de un Json y Prisma no las mira. Una fila rota se
+   * saltea: el resto del mapa tiene que seguir andando.
+   */
+  it('saltea una fila con esquinas rotas sin llevarse las demás', () => {
+    const rotas = [
+      { ...base, id: 'rota-1', esquinas: null },
+      { ...base, id: 'rota-2', esquinas: [[-68.9, -33.03]] },
+      { ...base, id: 'rota-3', esquinas: 'no es esto' },
+      { ...base, id: 'sana' },
+    ]
+    const salida = imagenesDibujables(rotas)
+    expect(salida).toHaveLength(1)
+    expect(salida[0]!.id).toBe('sana')
+  })
+
+  it('una opacidad fuera de rango no se cuela', () => {
+    expect(imagenesDibujables([{ ...base, opacidad: 5 }])[0]!.opacidad).toBe(
+      OPACIDAD_POR_DEFECTO,
+    )
+    expect(imagenesDibujables([{ ...base, opacidad: -1 }])[0]!.opacidad).toBe(
+      OPACIDAD_POR_DEFECTO,
+    )
+    expect(imagenesDibujables([{ ...base, opacidad: 0.3 }])[0]!.opacidad).toBe(0.3)
+  })
+
+  it('una lista vacía no rompe', () => {
+    expect(imagenesDibujables([])).toEqual([])
   })
 })

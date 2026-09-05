@@ -10,15 +10,24 @@ import { AvisoSinUbicar, type SinUbicar } from '@/components/mapa/aviso-sin-ubic
 import { FichaMapa, TOPES, TOPE_QUE_SIGUE_EL_MAPA } from '@/components/mapa/ficha-mapa'
 import { PanelDibujo, type DatosDibujo } from '@/components/mapa/panel-dibujo'
 import { PanelImagen } from '@/components/mapa/panel-imagen'
+import { PanelImagenGuardada } from '@/components/mapa/panel-imagen-guardada'
 import { esClaveColor, type ClaveColor, type Forma } from '@/lib/anotaciones'
-import { OPACIDAD_POR_DEFECTO, esEsquinas, type Esquinas } from '@/lib/imagen-mapa'
+import {
+  OPACIDAD_POR_DEFECTO,
+  imagenesDibujables,
+  type Esquinas,
+} from '@/lib/imagen-mapa'
 import { describirFalloDeFirma } from '@/lib/subidas'
 import { destinoDeColocacion, type ModoColocacion } from '@/lib/colocacion-mapa'
 import {
   borrarAnotacionAction,
   guardarAnotacionAction,
 } from '@/server/actions/anotaciones'
-import { guardarImagenMapaAction } from '@/server/actions/imagenes-mapa'
+import {
+  actualizarImagenMapaAction,
+  borrarImagenMapaAction,
+  guardarImagenMapaAction,
+} from '@/server/actions/imagenes-mapa'
 import type { AnotacionMapa, ImagenMapa } from '@/server/queries/farms'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { MarcadorMapa } from '@/server/queries/farms'
@@ -217,22 +226,51 @@ export function VistaMapa({
   }>()
   const [opacidadCalzado, setOpacidadCalzado] = useState(OPACIDAD_POR_DEFECTO)
 
-  /**
-   * Las esquinas vienen de un Json, así que se validan antes de dibujar.
-   * Una fila con esquinas rotas se saltea en vez de tumbar el mapa entero.
-   */
-  const imagenesParaElMapa = useMemo(
-    () =>
-      imagenes
-        .filter((i) => esEsquinas(i.esquinas))
-        .map((i) => ({
-          id: i.id,
-          rutaArchivo: i.rutaArchivo,
-          esquinas: i.esquinas as Esquinas,
-          opacidad: i.opacidad,
-        })),
-    [imagenes],
-  )
+  /** La imagen guardada que se está editando, si hay alguna. */
+  const [imagenAbierta, setImagenAbierta] = useState<string>()
+
+  const cambiarImagen = async (
+    id: string,
+    cambios: { etiqueta?: string; opacidad?: number; visible?: boolean },
+  ) => {
+    // El farmId sale de la fila que ya tenemos y no de la selección: al abrir
+    // el panel la ficha se cierra, así que `seleccionado` ya no sirve.
+    const imagen = imagenes.find((i) => i.id === id)
+    if (!imagen) return
+
+    setGuardando(true)
+    const r = await actualizarImagenMapaAction({ id, farmId: imagen.farmId, ...cambios })
+    setGuardando(false)
+
+    if (!r.ok) {
+      toast.error(r.error)
+      return
+    }
+
+    setImagenAbierta(undefined)
+    router.refresh()
+  }
+
+  const borrarImagen = async (id: string) => {
+    const imagen = imagenes.find((i) => i.id === id)
+    if (!imagen) return
+
+    setGuardando(true)
+    const r = await borrarImagenMapaAction(imagen.farmId, id)
+    setGuardando(false)
+
+    if (!r.ok) {
+      toast.error(r.error)
+      return
+    }
+
+    setImagenAbierta(undefined)
+    toast.success('Imagen borrada.')
+    router.refresh()
+  }
+
+  /** Qué se dibuja: apagadas afuera, esquinas rotas afuera. Ver imagen-mapa.ts. */
+  const imagenesParaElMapa = useMemo(() => imagenesDibujables(imagenes), [imagenes])
   const esquinasActuales = useRef<Esquinas>(undefined)
 
   const salirDelCalzado = () => {
@@ -463,6 +501,19 @@ export function VistaMapa({
           momentos en que estorbaría los botones que están abajo. */}
       {colocando || dibujando || moviendo ? null : <AvisoSinUbicar registros={sinUbicar} />}
 
+      {imagenAbierta ? (
+        <PanelImagenGuardada
+          etiqueta={imagenes.find((i) => i.id === imagenAbierta)?.etiqueta ?? ''}
+          opacidad={
+            imagenes.find((i) => i.id === imagenAbierta)?.opacidad ?? OPACIDAD_POR_DEFECTO
+          }
+          guardando={guardando}
+          onCancelar={() => setImagenAbierta(undefined)}
+          onGuardar={(datos) => void cambiarImagen(imagenAbierta, datos)}
+          onBorrar={() => void borrarImagen(imagenAbierta)}
+        />
+      ) : null}
+
       {calzando ? (
         <PanelImagen
           nombreArchivo={calzando.nombre}
@@ -580,6 +631,18 @@ export function VistaMapa({
         onCerrar={() => setSeleccionado(undefined)}
         puedeCalzarImagen={puedeCalzarImagen}
         onCalzarImagen={(farmId, archivo) => void elegirImagen(archivo, farmId)}
+        imagenesDeLaFinca={
+          seleccionado?.tipo === 'finca'
+            ? imagenes.filter((i) => i.farmId === seleccionado.id)
+            : []
+        }
+        onAbrirImagen={(id) => {
+          // La ficha se va: el panel de la imagen ocupa el mismo lugar, y dos
+          // hojas encimadas dejan al usuario sin saber cuál está cerrando.
+          setSeleccionado(undefined)
+          setImagenAbierta(id)
+        }}
+        onPrenderImagen={(id, visible) => void cambiarImagen(id, { visible })}
         tope={tope}
         onTope={setTope}
         dibujosDeLaFinca={

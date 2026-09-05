@@ -261,8 +261,22 @@ export async function puntosDelMapa() {
    * imagen siempre cuelga de una finca, así que basta el scope — y por eso no
    * hay un `OR` con `farmId: null` como en los dibujos.
    */
+  /*
+   * Se traen las apagadas TAMBIÉN, y por una razón concreta: si se filtrara
+   * por `visible`, apagar una imagen la sacaría de la lista y nadie podría
+   * volver a prenderla. El mapa decide qué dibuja; la consulta trae todo.
+   *
+   * Salvo para quien no las administra: a un cliente no le llega ni el nombre
+   * de una imagen apagada, porque para él apagada es que no está.
+   */
+  const administraImagenes = fincas.some((f) => authorize(actor, 'write', 'overlay', f.id))
+
   const imagenes = await prisma.mapOverlay.findMany({
-    where: { deletedAt: null, visible: true, farm: { ...scope, deletedAt: null } },
+    where: {
+      deletedAt: null,
+      farm: { ...scope, deletedAt: null },
+      ...(administraImagenes ? {} : { visible: true }),
+    },
     orderBy: { createdAt: 'asc' },
     select: {
       id: true,
@@ -271,6 +285,8 @@ export async function puntosDelMapa() {
       rutaArchivo: true,
       esquinas: true,
       opacidad: true,
+      visible: true,
+      createdAt: true,
       farm: { select: { name: true } },
     },
   })
@@ -428,9 +444,7 @@ export async function puntosDelMapa() {
      * la pista para mostrar el botón; el permiso de verdad se vuelve a decidir
      * por finca en la acción y en la firma de subida.
      */
-    puedeCalzarImagen: marcadores.some(
-      (m) => m.tipo === 'finca' && authorize(actor, 'write', 'overlay', m.id),
-    ),
+    puedeCalzarImagen: administraImagenes,
   }
 }
 

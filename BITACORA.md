@@ -85,19 +85,18 @@ privados y los datos de demostración.
 ```
 tsc              0 errores
 eslint           0 errores
-vitest           206 tests unitarios
-playwright       308 pasan, 2 salteados, 4 por contención  — 20,7 min
+vitest           211 tests unitarios
+playwright       318 pasan, 2 salteados, 0 fallan  — 20,0 min
 build sin .env   compila
 ```
 
 Los e2e son 152 declarados × 2 viewports, menos los que se saltean a propósito
 (los que tocan ajustes globales corren en un solo proyecto — ver §9).
 
-Los cuatro que fallaron son de `dibujos.spec.ts` y **pasan los seis** corridos
-solos con `--workers=1`: es contención del plan gratuito, y §9 explica cómo
-distinguirla de una regresión. Vale comprobarlo aunque las caídas no sean del
-código que uno tocó: las imágenes del mapa agregan capas, y esos tests arrastran
-vértices sobre el mapa.
+Es la primera corrida entera sin una sola caída por contención, y no parece
+casualidad: con los tests en su propio puerto ya no hay un servidor ajeno
+compitiendo. Aun así, §9 explica cómo distinguir contención de regresión — no
+conviene desaprenderlo porque una corrida haya salido limpia.
 
 ---
 
@@ -520,6 +519,22 @@ el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 - `shadcn` v4 **reemplazó el componente `form` por `field`**; `CardTitle`
   renderiza un `div`, no un heading.
 
+**Los e2e corren en el puerto 3100, no en el 3000.** No es comodidad: es la
+segunda mitad de la traba que impide tocar la base del cliente.
+
+`reuseExistingServer` hace que Playwright NO levante su servidor si ya hay algo
+escuchando, y `npm run dev` a secas carga solo el `.env`, que es producción. O
+sea que con el servidor de desarrollo abierto —lo normal mientras uno
+programa— los 300 tests, que crean y borran, se iban a la base del cliente.
+`exigirBaseDeDesarrollo` compara los ARCHIVOS de entorno y pasaba en verde: no
+puede ver a qué base le habla un servidor que ya estaba prendido.
+
+Con un puerto propio eso no puede pasar. Y si el servidor de desarrollo está
+abierto, Next se niega a levantar el segundo —«Another next dev server is
+already running»— y los tests **no arrancan**, que es la falla correcta:
+ruidosa e inmediata, en vez de silenciosa y destructiva. Hay que bajar el
+`npm run dev` para correr los e2e.
+
 **Un timeout que rota entre corridas es contención, no un bug.** Con 4 workers
 contra la base gratuita, uno o dos tests caen por `toBeVisible` agotando el
 tiempo, y no son los mismos la corrida siguiente. La forma de saberlo, antes de
@@ -579,8 +594,7 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 | **Limpieza de archivos huérfanos** | Si alguien graba un audio y abandona el formulario, el archivo queda en el bucket sin fila. Lo mismo con una imagen del mapa que se sube y después se borra: el borrado es suave y el archivo queda. |
 | **Desactivar una finca** | No existe. La única acción parecida (`archivarFincaAction`) hace un borrado suave y ni siquiera está conectada a ninguna pantalla. Una finca «apagada pero visible» es otra cosa y hay que construirla. |
 | **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
-| **Administrar las imágenes calzadas** | Se suben, se calzan y se ven, pero todavía no hay pantalla para listarlas, renombrarlas, apagarlas ni borrarlas. La acción de borrado existe (`borrarImagenMapaAction`) y no está conectada a nada. Ver §11. |
-| **Las imágenes en el respaldo** | El respaldo lleva la fila pero no el archivo, así que restaurar dejaría imágenes rotas. Hay que decidir si se incluyen los archivos o si se excluyen las imágenes y se dice explícitamente. |
+| **Recalzar una imagen ya guardada** | Se puede renombrar, apagar y borrar, pero para corregir la alineación hay que borrarla y volver a subirla. Ver §11. |
 
 ### Lo que necesita acción del usuario
 
@@ -711,6 +725,31 @@ apuntando a la carpeta de otra finca y leer lo ajeno con permiso propio.
 **`MapOverlay.farmId` es obligatorio**, al revés de `MapAnnotation.farmId`. Una
 imagen suelta sería el terreno de una finca visible sin dueño, y los dibujos
 sueltos ya dejaron su lección.
+
+### Administrar las imágenes
+
+Se listan en la ficha de la finca, debajo de los dibujos. Cada fila tiene el
+interruptor de prendido a la izquierda y el resto abre el panel: apagar una
+imagen para ver el satelital es lo que más se hace, y obligarla a pasar por dos
+pantallas la volvería molesta.
+
+Tocar la fila abre el panel para cambiarle el nombre, cuánto se ve, o borrarla
+— igual que un dibujo. En esta app tocar algo hecho lo abre para corregirlo:
+que dos cosas parecidas se comporten distinto obliga a aprender la app dos
+veces.
+
+**No se recalza desde ahí.** Mover una imagen es alinearla contra el terreno, y
+eso se hace mirando el mapa, no un formulario.
+
+⚠️ **La consulta trae también las apagadas.** Si filtrara por `visible`, apagar
+una imagen la sacaría de la lista y nadie podría volver a prenderla. El mapa
+decide qué dibuja (`imagenesDibujables`); la consulta trae todo. Salvo para
+quien no las administra: a un cliente no le llega ni el nombre de una apagada.
+
+⚠️ **La clave del efecto que las dibuja lleva la opacidad, no solo los ids.**
+Cambiarle la opacidad a una imagen deja los ids iguales, así que el efecto no
+volvía a correr: el cambio se guardaba en la base y el mapa seguía mostrando el
+valor viejo hasta recargar.
 
 ### Decisiones que no conviene revertir
 

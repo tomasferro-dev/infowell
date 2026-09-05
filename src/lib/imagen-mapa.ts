@@ -127,3 +127,49 @@ export function rutaEsDeLaFinca(ruta: string, farmId: string): boolean {
   const partes = interpretarRuta(ruta)
   return partes !== null && partes.farmId === farmId
 }
+
+/** Una imagen tal como sale de la base, antes de saber si sirve para dibujar. */
+export type ImagenDeLaBase = {
+  id: string
+  rutaArchivo: string
+  esquinas: unknown
+  opacidad: number
+  visible: boolean
+}
+
+/** Lo que el mapa necesita para dibujar una imagen. */
+export type ImagenDibujable = {
+  id: string
+  rutaArchivo: string
+  esquinas: Esquinas
+  opacidad: number
+}
+
+/**
+ * Cuáles de las imágenes guardadas se dibujan, y con qué valores.
+ *
+ * Separado del componente para poder probarlo: acá se decide que una fila con
+ * las esquinas rotas se saltee en vez de tumbar el mapa entero. Las esquinas
+ * viajan como Json y Prisma no mira adentro, así que esta es la única barrera
+ * entre un dato malo y un mapa en blanco.
+ *
+ * Las apagadas se traen igual desde la base —si no, apagar una la volvería
+ * imposible de prender— pero no se dibujan.
+ */
+export function imagenesDibujables(imagenes: ImagenDeLaBase[]): ImagenDibujable[] {
+  const dibujables: ImagenDibujable[] = []
+
+  for (const imagen of imagenes) {
+    if (!imagen.visible) continue
+    if (!esEsquinas(imagen.esquinas)) continue
+
+    dibujables.push({
+      id: imagen.id,
+      rutaArchivo: imagen.rutaArchivo,
+      esquinas: imagen.esquinas,
+      opacidad: esOpacidad(imagen.opacidad) ? imagen.opacidad : OPACIDAD_POR_DEFECTO,
+    })
+  }
+
+  return dibujables
+}
