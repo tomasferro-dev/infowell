@@ -589,12 +589,9 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 
 | Pendiente | Nota |
 |---|---|
-| **Historial en el respaldo** | Hoy lleva fincas, pozos y dibujos. Las intervenciones y mediciones no. Ver §11. |
 | **Cola de subida offline** | IndexedDB + Background Sync. Diferido a propósito: si falla en silencio, el operario cree que guardó y no guardó. Es una fase propia. |
-| **Limpieza de archivos huérfanos** | Si alguien graba un audio y abandona el formulario, el archivo queda en el bucket sin fila. Lo mismo con una imagen del mapa que se sube y después se borra: el borrado es suave y el archivo queda. |
 | **Desactivar una finca** | No existe. La única acción parecida (`archivarFincaAction`) hace un borrado suave y ni siquiera está conectada a ninguna pantalla. Una finca «apagada pero visible» es otra cosa y hay que construirla. |
 | **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
-| **Recalzar una imagen ya guardada** | Se puede renombrar, apagar y borrar, pero para corregir la alineación hay que borrarla y volver a subirla. Ver §11. |
 
 ### Lo que necesita acción del usuario
 

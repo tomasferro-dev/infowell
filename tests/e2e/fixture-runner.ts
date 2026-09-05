@@ -75,6 +75,40 @@ async function setup(marca: string) {
     select: { id: true, wells: { select: { id: true } } },
   })
 
+  /*
+   * Una visita con medición, un servicio y una observación de texto.
+   *
+   * Existe para que los tests que miran el HISTORIAL —el respaldo, sobre todo—
+   * tengan algo propio de la corrida. Sin esto dependerían de los datos de
+   * demostración, que pueden no estar en la base donde corren los tests.
+   */
+  const servicio = await prisma.serviceType.findFirst({ select: { id: true, slug: true } })
+
+  await prisma.intervention.create({
+    data: {
+      wellId: fincaPropia.wells[0]!.id,
+      performedAt: new Date('2026-03-14T00:00:00Z'),
+      createdById: admin.id,
+      ...(servicio ? { services: { create: { serviceTypeId: servicio.id } } } : {}),
+      reading: {
+        create: {
+          wellId: fincaPropia.wells[0]!.id,
+          measuredAt: new Date('2026-03-14T00:00:00Z'),
+          staticLevelM: '42.50',
+          dynamicLevelM: '58.00',
+          createdById: admin.id,
+        },
+      },
+      observations: {
+        create: {
+          wellId: fincaPropia.wells[0]!.id,
+          body: `Observación de ${marca}`,
+          createdById: admin.id,
+        },
+      },
+    },
+  })
+
   const fincaAjena = await prisma.farm.create({
     data: {
       name: `${marca} Finca Ajena`,

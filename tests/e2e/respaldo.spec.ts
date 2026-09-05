@@ -104,7 +104,10 @@ test.describe('exportar e importar', () => {
 
     const respaldo = JSON.parse(await descargar(page))
 
-    expect(respaldo.version).toBe(1)
+    // A mano y no contra la constante: comparar contra `VERSION_RESPALDO`
+    // sería tautológico. Así, subir el formato obliga a tocar este test, que
+    // es exactamente la decisión deliberada que se quiere forzar.
+    expect(respaldo.version).toBe(2)
     expect(respaldo.exportadoEl).toBeTruthy()
 
     const propia = respaldo.fincas.find((f: { id: string }) => f.id === datos.fincaPropiaId)
@@ -115,6 +118,28 @@ test.describe('exportar e importar', () => {
     // Las coordenadas viajan como texto, no como Decimal ni como número.
     expect(typeof propia.latitude).toBe('string')
     expect(Number.isFinite(Number(propia.latitude))).toBe(true)
+
+    // El historial del pozo de la corrida.
+    const suyas = respaldo.intervenciones.filter(
+      (i: { wellId: string }) => i.wellId === datos.pozoPropioId,
+    )
+    expect(suyas.length, 'el historial del pozo tiene que venir').toBeGreaterThan(0)
+
+    const conMedicion = suyas.find((i: { medicion: unknown }) => i.medicion)
+    expect(conMedicion, 'alguna visita mide').toBeTruthy()
+
+    // Las medidas también como texto, por lo mismo que las coordenadas.
+    const algunaMedida = Object.entries(conMedicion.medicion as Record<string, unknown>).find(
+      ([campo, valor]) => campo.endsWith('M') && valor !== null,
+    )
+    if (algunaMedida) expect(typeof algunaMedida[1]).toBe('string')
+
+    // Los servicios por slug: un id no serviría en otra base.
+    const conServicio = suyas.find((i: { servicios: unknown[] }) => i.servicios.length > 0)
+    if (conServicio) {
+      expect(typeof conServicio.servicios[0].slug).toBe('string')
+      expect(conServicio.servicios[0]).not.toHaveProperty('serviceTypeId')
+    }
   })
 
   test('restaura lo que se cambió por error', async ({ page }) => {

@@ -64,7 +64,8 @@ export function RespaldoDatos({
       }
 
       toast.success(
-        `${r.fincas} fincas, ${r.pozos} pozos y ${r.dibujos} dibujos` +
+        `${r.fincas} fincas, ${r.pozos} pozos, ${r.dibujos} dibujos y ` +
+          `${r.intervenciones} intervenciones` +
           (r.omitidos > 0 ? ` · ${r.omitidos} omitidos` : ''),
       )
     } catch {
@@ -92,8 +93,8 @@ export function RespaldoDatos({
           <p className="text-foreground font-medium">No es una copia completa</p>
           <p>
             Quedan afuera los remitos, las notas de voz y las imágenes del mapa —sus fotos y
-            audios no entran en un archivo de texto—, el historial de intervenciones y
-            mediciones, y los usuarios.
+            audios no entran en un archivo de texto— y los usuarios. Del historial va todo
+            menos las observaciones que eran solo audio.
           </p>
         </div>
       </div>

@@ -15,7 +15,7 @@ import { requireAccess } from '@/server/guards'
 export async function armarRespaldo(): Promise<{ datos: Respaldo; archivo: string }> {
   await requireAccess('write', 'setting')
 
-  const [fincas, dibujos] = await Promise.all([
+  const [fincas, dibujos, intervenciones] = await Promise.all([
     prisma.farm.findMany({
       where: { deletedAt: null },
       orderBy: { name: 'asc' },
@@ -65,6 +65,45 @@ export async function armarRespaldo(): Promise<{ datos: Respaldo; archivo: strin
         geometry: true,
       },
     }),
+
+    /*
+     * El historial.
+     *
+     * Los servicios salen por SLUG y la bomba por su etiqueta normalizada, no
+     * por id: los cuid son distintos en cada base y un respaldo con ids no se
+     * podría importar en otra, que es la mitad del propósito de esto.
+     *
+     * Las observaciones van solo si tienen texto. Una que era solo nota de voz
+     * no se exporta: el audio no entra en un JSON, e importarla vacía violaría
+     * la regla del modelo, que exige texto o audio.
+     */
+    prisma.intervention.findMany({
+      where: { deletedAt: null, well: { deletedAt: null } },
+      orderBy: { performedAt: 'asc' },
+      select: {
+        id: true,
+        wellId: true,
+        performedAt: true,
+        services: { select: { detail: true, serviceType: { select: { slug: true } } } },
+        reading: {
+          select: {
+            measuredAt: true,
+            depthM: true,
+            pumpDepthM: true,
+            dynamicLevelM: true,
+            staticLevelM: true,
+            boreDiameterIn: true,
+            flowRateM3H: true,
+            pump: { select: { normalizedLabel: true } },
+          },
+        },
+        observations: {
+          where: { deletedAt: null, body: { not: null } },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, body: true },
+        },
+      },
+    }),
   ])
 
   return {
@@ -86,6 +125,30 @@ export async function armarRespaldo(): Promise<{ datos: Respaldo; archivo: strin
         })),
       })),
       dibujos,
+      intervenciones: intervenciones.map((i) => ({
+        id: i.id,
+        wellId: i.wellId,
+        performedAt: i.performedAt.toISOString().slice(0, 10),
+        servicios: i.services.map((s) => ({
+          slug: s.serviceType.slug,
+          detail: s.detail,
+        })),
+        medicion: i.reading
+          ? {
+              measuredAt: i.reading.measuredAt.toISOString().slice(0, 10),
+              depthM: i.reading.depthM?.toString() ?? null,
+              pumpDepthM: i.reading.pumpDepthM?.toString() ?? null,
+              dynamicLevelM: i.reading.dynamicLevelM?.toString() ?? null,
+              staticLevelM: i.reading.staticLevelM?.toString() ?? null,
+              boreDiameterIn: i.reading.boreDiameterIn?.toString() ?? null,
+              flowRateM3H: i.reading.flowRateM3H?.toString() ?? null,
+              bomba: i.reading.pump?.normalizedLabel ?? null,
+            }
+          : null,
+        // El filtro de arriba ya sacó las sin texto; el `?? ''` es solo para
+        // que TypeScript sepa que acá no puede haber null.
+        observaciones: i.observations.map((o) => ({ id: o.id, body: o.body ?? '' })),
+      })),
     },
   }
 }

@@ -9,7 +9,14 @@ import { requireAccess, requireActor } from '@/server/guards'
 import { armarRespaldo } from '@/server/queries/respaldo'
 
 export type ResultadoRespaldo =
-  | { ok: true; fincas: number; pozos: number; dibujos: number; omitidos: number }
+  | {
+      ok: true
+      fincas: number
+      pozos: number
+      dibujos: number
+      intervenciones: number
+      omitidos: number
+    }
   | { ok: false; error: string }
 
 /** Devuelve el respaldo listo para bajar. La descarga la hace el navegador. */
@@ -148,9 +155,112 @@ export async function importarAction(contenido: string): Promise<ResultadoRespal
     dibujos += 1
   }
 
+  /*
+   * El historial.
+   *
+   * Los servicios y las bombas se buscan por su llave natural —slug y etiqueta
+   * normalizada— porque los cuid son distintos en cada base. Lo que no esté en
+   * el catálogo de ESTA base se omite y se cuenta: es preferible una
+   * intervención con un servicio de menos que ninguna intervención.
+   *
+   * `createdById` es quien importa. No hay a quién más atribuirlo: el respaldo
+   * no lleva usuarios, a propósito.
+   */
+  let intervenciones = 0
+
+  if (datos.intervenciones.length > 0) {
+    const [servicios, bombas] = await Promise.all([
+      prisma.serviceType.findMany({ select: { id: true, slug: true } }),
+      prisma.pump.findMany({ select: { id: true, normalizedLabel: true } }),
+    ])
+
+    const idPorSlug = new Map(servicios.map((s) => [s.slug, s.id]))
+    const idPorBomba = new Map(bombas.map((b) => [b.normalizedLabel, b.id]))
+
+    for (const inter of datos.intervenciones) {
+      // Sin el pozo en el archivo, la intervención no tiene dónde colgar.
+      if (!pozosDelArchivo.has(inter.wellId)) {
+        omitidos += 1
+        continue
+      }
+
+      const performedAt = new Date(`${inter.performedAt}T00:00:00Z`)
+
+      await prisma.intervention.upsert({
+        where: { id: inter.id },
+        update: { wellId: inter.wellId, performedAt },
+        create: { id: inter.id, wellId: inter.wellId, performedAt, createdById: actor.id },
+      })
+
+      /*
+       * Servicios y observaciones van por UPSERT, no por borrar y recrear.
+       *
+       * Borrar primero haría que importar una copia vieja se llevara puesto lo
+       * que se agregó después, que es exactamente lo que este importador
+       * promete no hacer. Con llave —el par intervención+servicio, y el id de
+       * la observación— importar dos veces deja lo mismo que importar una, y
+       * nada de lo nuevo se pierde.
+       */
+      for (const servicio of inter.servicios) {
+        const serviceTypeId = idPorSlug.get(servicio.slug)
+        if (!serviceTypeId) {
+          omitidos += 1
+          continue
+        }
+
+        await prisma.interventionService.upsert({
+          where: {
+            interventionId_serviceTypeId: { interventionId: inter.id, serviceTypeId },
+          },
+          update: { detail: servicio.detail ?? null },
+          create: { interventionId: inter.id, serviceTypeId, detail: servicio.detail ?? null },
+        })
+      }
+
+      if (inter.medicion) {
+        const m = inter.medicion
+        const campos = {
+          wellId: inter.wellId,
+          measuredAt: new Date(`${m.measuredAt}T00:00:00Z`),
+          depthM: m.depthM ?? null,
+          pumpDepthM: m.pumpDepthM ?? null,
+          dynamicLevelM: m.dynamicLevelM ?? null,
+          staticLevelM: m.staticLevelM ?? null,
+          boreDiameterIn: m.boreDiameterIn ?? null,
+          flowRateM3H: m.flowRateM3H ?? null,
+          // Una bomba que no está en el catálogo de esta base se deja en nulo:
+          // perder qué bomba era es mucho menos grave que perder la medición.
+          pumpId: m.bomba ? (idPorBomba.get(m.bomba) ?? null) : null,
+        }
+
+        await prisma.wellStatusReading.upsert({
+          where: { interventionId: inter.id },
+          update: campos,
+          create: { ...campos, interventionId: inter.id, createdById: actor.id },
+        })
+      }
+
+      for (const obs of inter.observaciones) {
+        await prisma.observation.upsert({
+          where: { id: obs.id },
+          update: { body: obs.body },
+          create: {
+            id: obs.id,
+            wellId: inter.wellId,
+            interventionId: inter.id,
+            body: obs.body,
+            createdById: actor.id,
+          },
+        })
+      }
+
+      intervenciones += 1
+    }
+  }
+
   revalidatePath('/mapa')
   revalidatePath('/fincas')
   revalidatePath('/')
 
-  return { ok: true, fincas: datos.fincas.length, pozos, dibujos, omitidos }
+  return { ok: true, fincas: datos.fincas.length, pozos, dibujos, intervenciones, omitidos }
 }
