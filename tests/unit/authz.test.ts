@@ -107,3 +107,41 @@ describe('authorize — reglas transversales (fail-closed)', () => {
     expect(authorize(cliente, 'write', 'catalog')).toBe(false)
   })
 })
+
+describe('authorize — overlay (la imagen que se calza sobre el mapa)', () => {
+  it('la escribe SOLO el admin', () => {
+    expect(authorize(admin, 'write', 'overlay', FINCA_A)).toBe(true)
+    // El cargador anda en la ruta; sacar una captura del servicio satelital
+    // es tarea de oficina. No la escribe aunque la finca sea suya.
+    expect(authorize(cargador, 'write', 'overlay', FINCA_A)).toBe(false)
+    expect(authorize(cliente, 'write', 'overlay', FINCA_A)).toBe(false)
+  })
+
+  it('la lee cualquiera que tenga acceso a esa finca', () => {
+    expect(authorize(cliente, 'read', 'overlay', FINCA_A)).toBe(true)
+    expect(authorize(cargador, 'read', 'overlay', FINCA_A)).toBe(true)
+    expect(authorize(admin, 'read', 'overlay', FINCA_B)).toBe(true)
+  })
+
+  it('NO la lee quien no tiene la finca', () => {
+    expect(authorize(cliente, 'read', 'overlay', FINCA_B)).toBe(false)
+    expect(authorize(cargador, 'read', 'overlay', FINCA_B)).toBe(false)
+  })
+
+  /**
+   * La regla que de verdad importa: sin finca se NIEGA. Una consulta que se
+   * olvidó de pasar el scope no puede colarse por omisión — es la forma más
+   * común de filtrar datos entre clientes.
+   */
+  it('sin finca se niega, incluso al admin', () => {
+    expect(authorize(admin, 'read', 'overlay')).toBe(false)
+    expect(authorize(admin, 'write', 'overlay')).toBe(false)
+    expect(authorize(cliente, 'read', 'overlay')).toBe(false)
+  })
+
+  it('un usuario dado de baja no la toca', () => {
+    const baja: Actor = { ...admin, isActive: false }
+    expect(authorize(baja, 'read', 'overlay', FINCA_A)).toBe(false)
+    expect(authorize(baja, 'write', 'overlay', FINCA_A)).toBe(false)
+  })
+})

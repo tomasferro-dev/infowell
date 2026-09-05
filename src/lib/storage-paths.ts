@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto'
 
 export const BUCKET_REMITOS = 'remitos'
 export const BUCKET_NOTAS_VOZ = 'notas-voz'
+/** Imágenes que el usuario calza sobre el mapa (§11 de la bitácora). */
+export const BUCKET_MAPA = 'mapa'
 
 /** Solo caracteres seguros: sin barras, sin puntos, sin nada que escape. */
 const SEGMENTO_VALIDO = /^[A-Za-z0-9_-]+$/

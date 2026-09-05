@@ -56,6 +56,7 @@ model User {
   readingsCreated      WellStatusReading[] @relation("ReadingAuthor")
   settingsUpdated      AppSetting[]        @relation("SettingEditor")
   annotationsCreated   MapAnnotation[]     @relation("AnnotationAuthor")
+  overlaysCreated      MapOverlay[]        @relation("OverlayAuthor")
   observationsCreated  Observation[]       @relation("ObservationAuthor")
   receiptsCreated      Receipt[]           @relation("ReceiptAuthor")
 
@@ -130,6 +131,7 @@ model Farm {
   wells       Well[]
   receipts    Receipt[]
   annotations MapAnnotation[]
+  overlays    MapOverlay[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -460,4 +462,52 @@ model MapAnnotation {
 
   @@index([farmId, deletedAt])
   @@index([wellId, deletedAt])
+}
+
+model MapOverlay {
+  id String @id @default(cuid())
+
+  /// OBLIGATORIO, a diferencia de MapAnnotation.farmId.
+  ///
+  /// Una imagen del mapa muestra el terreno de una finca: si pudiera andar
+  /// suelta, un cliente vería el campo de otro. Además los dibujos sueltos ya
+  /// dejaron su leccion — no los alcanzaba ninguna cascada y terminaron
+  /// treinta a la vista del cliente (§11 de la bitácora).
+  farmId String
+
+  /// «Vuelo de marzo», «Finca con el galpón nuevo». Opcional: con una sola
+  /// imagen el rótulo sobra, y con tres hace falta.
+  etiqueta String?
+
+  /// Ruta en el bucket privado `mapa`. El primer segmento es el farmId, que
+  /// es de donde sale el permiso para firmar la URL (ver storage-paths.ts).
+  rutaArchivo String
+
+  /// Los cuatro vértices, desde arriba a la izquierda y en sentido horario:
+  /// [[lon, lat], [lon, lat], [lon, lat], [lon, lat]]
+  ///
+  /// Es el orden exacto que exige ImageSource de MapLibre. Se guarda igual
+  /// que como se consume para no traducir en el medio. Json y no PostGIS por
+  /// la misma razón que MapAnnotation.geometry: acá se dibuja, no se
+  /// consulta espacialmente. Lo valida `esEsquinas` en src/lib/imagen-mapa.ts,
+  /// porque Prisma no mira adentro de un Json.
+  esquinas Json
+
+  /// Arranca en 0.8: la imagen se calza mirando las dos capas a la vez, y una
+  /// imagen opaca tapa la referencia con la que se la está alineando.
+  opacidad Float @default(0.8)
+
+  /// Prenderla y apagarla sin borrarla. Una imagen vieja sigue sirviendo de
+  /// comparación; taparla siempre, no.
+  visible Boolean @default(true)
+
+  farm        Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User   @relation("OverlayAuthor", fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([farmId, deletedAt])
 }

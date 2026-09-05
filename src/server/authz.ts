@@ -29,6 +29,7 @@ export type Resource =
   | 'catalog' // ServiceType y Pump: globales, no pertenecen a una finca
   | 'setting' // ajustes de la app: globales, los cambia solo el admin
   | 'annotation' // dibujo suelto del mapa: no cuelga de ninguna finca
+  | 'overlay' // imagen que el usuario calza sobre el mapa de una finca
   | 'user' // gestión de usuarios y membresías
 
 /** Recursos que SIEMPRE pertenecen a una finca y exigen scope. */
@@ -39,6 +40,10 @@ const FARM_SCOPED: ReadonlySet<Resource> = new Set<Resource>([
   'reading',
   'observation',
   'receipt',
+  // La imagen del mapa muestra el terreno de una finca: si se escapara del
+  // scope, un cliente vería el campo de otro. Va acá desde el primer día,
+  // no como agregado después.
+  'overlay',
 ])
 
 /**

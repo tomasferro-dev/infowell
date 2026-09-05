@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-import { BUCKET_NOTAS_VOZ, BUCKET_REMITOS } from '../src/lib/storage-paths'
+import { BUCKET_MAPA, BUCKET_NOTAS_VOZ, BUCKET_REMITOS } from '../src/lib/storage-paths'
 
 /**
  * Crea los buckets que la app necesita, en el proyecto al que apunte el
@@ -21,7 +21,7 @@ import { BUCKET_NOTAS_VOZ, BUCKET_REMITOS } from '../src/lib/storage-paths'
  * quien lo hizo a propósito sería peor que decirlo.
  */
 
-const BUCKETS = [BUCKET_REMITOS, BUCKET_NOTAS_VOZ]
+const BUCKETS = [BUCKET_REMITOS, BUCKET_NOTAS_VOZ, BUCKET_MAPA]
 
 async function main() {
   const url = process.env.SUPABASE_URL?.trim().replace(/\/+$/, '')
