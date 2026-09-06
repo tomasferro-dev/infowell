@@ -66,7 +66,19 @@ export default async function FincasPage({
                 className="hover:bg-accent flex items-center gap-3 rounded-lg border p-4 transition-colors"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{finca.name}</p>
+                  <p className="flex items-center gap-2 truncate font-medium">
+                    <span className={finca.isActive ? undefined : 'text-muted-foreground'}>
+                      {finca.name}
+                    </span>
+                    {/* Apagada se dice, no se insinúa con un gris: en el
+                        listado hay varias juntas y el gris solo se lee si hay
+                        una activa al lado para comparar. */}
+                    {!finca.isActive ? (
+                      <Badge variant="outline" className="shrink-0 font-normal">
+                        Apagada
+                      </Badge>
+                    ) : null}
+                  </p>
                   <p className="text-muted-foreground truncate text-sm">
                     {[finca.city, finca.province].filter(Boolean).join(', ') || 'Sin ubicación'}
                   </p>

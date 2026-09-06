@@ -83,6 +83,51 @@ export async function archivarFincaAction(farmId: string) {
   redirect('/fincas')
 }
 
+/**
+ * Apagar una finca, que NO es archivarla.
+ *
+ * Archivar la saca de todos lados —de la lista y del mapa, con sus pozos y sus
+ * dibujos— porque pone `deletedAt`. Apagarla la deja a la vista con todo su
+ * historial y solo la retira de donde se empieza trabajo nuevo: el selector de
+ * fincas para cargar un remito ya filtra por `isActive`.
+ *
+ * Para qué sirve: una finca que dejó de ser cliente. Sus pozos y sus remitos
+ * son historia que hay que poder consultar, pero nadie debería cargarle un
+ * remito nuevo por error.
+ *
+ * No redirige, al revés que archivar: se sigue en la misma ficha, que ahora
+ * dice «apagada». Archivar redirige porque la finca ya no está ahí.
+ */
+export async function desactivarFincaAction(farmId: string) {
+  await requireAccess('write', 'farm', farmId)
+
+  await prisma.farm.update({ where: { id: farmId }, data: { isActive: false } })
+
+  revalidatePath('/fincas')
+  revalidatePath(`/fincas/${farmId}`)
+  revalidatePath('/mapa')
+}
+
+export async function reactivarFincaAction(farmId: string) {
+  await requireAccess('write', 'farm', farmId)
+
+  /*
+   * `deletedAt: null` en el where, no solo el id: reactivar una finca
+   * archivada la devolvería a medias —activa pero invisible—, un estado que
+   * no significa nada y que nadie sabría deshacer.
+   */
+  const { count } = await prisma.farm.updateMany({
+    where: { id: farmId, deletedAt: null },
+    data: { isActive: true },
+  })
+
+  if (count === 0) return
+
+  revalidatePath('/fincas')
+  revalidatePath(`/fincas/${farmId}`)
+  revalidatePath('/mapa')
+}
+
 // ─────────────────────────────────────────────────────────────
 // POZOS
 // ─────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { FlechaOCarga, IndicadorEnlace } from '@/components/layout/indicador-enlace'
+import { desactivarFincaAction, reactivarFincaAction } from '@/server/actions/farms'
 import { can } from '@/server/guards'
 import { obtenerFinca } from '@/server/queries/farms'
 
@@ -34,7 +35,12 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{finca.name}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{finca.name}</h1>
+            {/* Sin esto, apagar una finca no se ve en ningún lado y el usuario
+                no sabe si el botón hizo algo. */}
+            {!finca.isActive ? <Badge variant="secondary">Apagada</Badge> : null}
+          </div>
           {finca.taxId ? (
             <p className="text-muted-foreground text-sm tabular-nums">CUIT {finca.taxId}</p>
           ) : null}
@@ -85,7 +91,9 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">Pozos</h2>
-          {puedeCrearPozo ? (
+          {/* Apagada no se le carga trabajo nuevo: es todo el punto de
+              apagarla. Los pozos que ya tiene se siguen viendo. */}
+          {puedeCrearPozo && finca.isActive ? (
             <Button asChild size="sm" variant="outline">
               <Link href={`/fincas/${farmId}/pozos/nuevo`}>
                 <Plus className="size-4" />
@@ -154,6 +162,36 @@ export default async function FincaPage({ params }: { params: Promise<{ farmId: 
           <FlechaOCarga />
         </Link>
       </section>
+
+      {/*
+        Apagar NO es archivar. Apagada, la finca sigue en la lista y en el mapa
+        con todo su historial; solo deja de ofrecerse para cargar remitos
+        nuevos. Es para una finca que dejó de ser cliente: lo que se hizo hay
+        que poder consultarlo, pero nadie debería cargarle trabajo nuevo.
+      */}
+      {puedeEditar ? (
+        <form
+          action={
+            finca.isActive
+              ? desactivarFincaAction.bind(null, farmId)
+              : reactivarFincaAction.bind(null, farmId)
+          }
+          className="border-t pt-5"
+        >
+          <Button
+            type="submit"
+            variant={finca.isActive ? 'outline' : 'default'}
+            className="h-12 w-full"
+          >
+            {finca.isActive ? 'Apagar esta finca' : 'Volver a activarla'}
+          </Button>
+          <p className="text-muted-foreground mt-2 text-xs">
+            {finca.isActive
+              ? 'Sigue viéndose en la lista y en el mapa, con sus pozos y su historial. Deja de aparecer para cargar remitos nuevos.'
+              : 'Vuelve a aparecer para cargar remitos.'}
+          </p>
+        </form>
+      ) : null}
     </div>
   )
 }

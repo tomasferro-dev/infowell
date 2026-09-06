@@ -139,16 +139,6 @@ export async function obtenerPozo(farmId: string, wellId: string) {
   })
 }
 
-/** Fincas donde el actor puede cargar remitos. Alimenta selectores del alta. */
-export async function fincasParaSelector() {
-  const scope = await scopeDeFincas()
-
-  return prisma.farm.findMany({
-    where: { ...scope, deletedAt: null, isActive: true },
-    orderBy: { name: 'asc' },
-    select: { id: true, name: true },
-  })
-}
 
 /**
  * Todo lo que tiene coordenadas y el actor puede ver, para dibujar el mapa.

@@ -370,6 +370,28 @@ probablemente esté acá el motivo.
 11. **La búsqueda de catálogos ignora acentos.** Nadie en el campo escribe
     "Perforación" con tilde; si no lo encuentra, crea un duplicado.
 
+### Apagar una finca no es archivarla
+
+Son dos cosas distintas y conviene no confundirlas:
+
+| | Qué hace |
+|---|---|
+| **Apagar** (`isActive: false`) | La finca sigue en la lista y en el mapa, con sus pozos, su historial y sus remitos. Deja de ofrecerse para trabajo nuevo: se le va el botón de agregar pozo, y al cargador se le va el atajo de cargar remito del inicio. |
+| **Archivar** (`deletedAt`) | Desaparece de todos lados, con sus pozos y sus dibujos. |
+
+Para qué sirve apagar: una finca que dejó de ser cliente. Lo que se le hizo es
+historia que hay que poder consultar, pero nadie debería cargarle trabajo nuevo
+por error.
+
+⚠️ **El campo `Farm.isActive` existía desde el principio y no lo leía nadie.** El
+respaldo lo llevaba, `fincasDelCargador` lo filtraba, y no había forma de
+ponerlo en falso. Había además un `fincasParaSelector` que lo filtraba y que no
+usaba ninguna pantalla: se borró, porque código muerto que parece ser la fuente
+de la verdad es peor que no tenerlo.
+
+Reactivar usa `deletedAt: null` en el where: reactivar una finca archivada la
+dejaría activa pero invisible, un estado que no significa nada.
+
 ### Datos de demostración
 
 `npm run db:demo` — **destructivo y reproducible**. Borra fincas, pozos,
@@ -590,8 +612,7 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 | Pendiente | Nota |
 |---|---|
 | **Cola de subida offline** | IndexedDB + Background Sync. Diferido a propósito: si falla en silencio, el operario cree que guardó y no guardó. Es una fase propia. |
-| **Desactivar una finca** | No existe. La única acción parecida (`archivarFincaAction`) hace un borrado suave y ni siquiera está conectada a ninguna pantalla. Una finca «apagada pero visible» es otra cosa y hay que construirla. |
-| **Clustering de marcadores** | Solo si crecen mucho las fincas. Ver §11. |
+| **Clustering de marcadores** | **Descartado** (5 de septiembre de 2026). La bitácora decía «solo si crecen mucho las fincas» y el cliente tiene cuatro: construirlo ahora sería código especulativo que hay que mantener y que agrega una capa más al mapa. Se hace el día que los pines molesten de verdad. |
 
 ### Lo que necesita acción del usuario
 
