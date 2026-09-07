@@ -5,7 +5,7 @@
 > nada más**: ni memoria previa, ni explorar el código para entender por qué
 > las cosas son como son.
 >
-> Última actualización: 2 de septiembre de 2026.
+> Última actualización: 6 de septiembre de 2026.
 
 ---
 
@@ -57,8 +57,10 @@ El login exige un email válido, así que el usuario del cliente no pudo ser
 
 ### Qué datos hay
 
-Cuatro fincas con nombres de fantasía, siete pozos, siete remitos, veinticuatro
-intervenciones y cinco dibujos hechos a mano por el cliente (§8).
+Contado en producción el 6 de septiembre de 2026: cuatro fincas con nombres de
+fantasía, siete pozos, siete remitos, veinticuatro intervenciones y **siete**
+dibujos hechos a mano por el cliente (§8). Todavía ninguna imagen calzada sobre
+el terreno: la función es nueva y el cliente no la usó aún.
 
 Producción arrastraba además cuatro fincas `e2e-…` de una corrida anterior a la
 separación de las bases, que el administrador veía en el listado y en el mapa.
@@ -85,12 +87,12 @@ privados y los datos de demostración.
 ```
 tsc              0 errores
 eslint           0 errores
-vitest           228 tests unitarios
+vitest           234 tests unitarios
 playwright       336 pasan, 2 salteados, 0 fallan  — 19,7 min
 build sin .env   compila
 ```
 
-Los e2e son 152 declarados × 2 viewports, menos los que se saltean a propósito
+Los e2e son los declarados × 2 viewports, menos los que se saltean a propósito
 (los que tocan ajustes globales corren en un solo proyecto — ver §9).
 
 Es la primera corrida entera sin una sola caída por contención, y no parece
@@ -191,9 +193,12 @@ User ─┬─(N:N vía FarmMember)─ Farm ─┬─ Well ─┬─ Interventio
                                     │        ├─ Observation         (interventionId nullable)
                                     │        └─ MapAnnotation       (dibujo del pozo)
                                     ├─ Receipt ─ ReceiptPhoto
-                                    └─ MapAnnotation                (dibujo de la finca)
+                                    ├─ MapAnnotation                (dibujo de la finca)
+                                    └─ MapOverlay                   (imagen sobre el terreno)
 
 MapAnnotation con farmId y wellId en null → referencia suelta, sin dueño (§11)
+MapOverlay SIEMPRE tiene farmId: una imagen suelta sería el terreno de una
+finca visible sin dueño (§11)
 AppSetting                              → ajustes globales, en clave/valor
 Account · Session · VerificationToken   → tablas de Auth.js, no se tocan
 ```
@@ -390,6 +395,59 @@ probablemente esté acá el motivo.
     "ya existía". El usuario quería tenerlo seleccionable, y eso se cumple.
 11. **La búsqueda de catálogos ignora acentos.** Nadie en el campo escribe
     "Perforación" con tilde; si no lo encuentra, crea un duplicado.
+
+### La cola de remitos sin señal
+
+El operario carga remitos parado en el campo, con 4G malo o sin nada. Un remito
+cargado sin señal se perdía, y él no se enteraba hasta mucho después —o nunca—.
+
+La regla que ordena todo el diseño es la que difería esta fase: **si falla en
+silencio, el operario cree que guardó y no guardó.** De ahí sale cada decisión:
+
+**Nunca dice «guardado» a secas.** Sin señal dice «guardado en el teléfono y sube
+solo», que es la verdad. Y hay una barra fija arriba, en TODAS las pantallas,
+con cuántos faltan. Una cola sin esa barra sería exactamente el fallo silencioso
+que veníamos a evitar, con más código.
+
+**Sin señal NO se navega.** Ir al listado de remitos llevaba a la pantalla de
+«Sin conexión», donde el operario no ve nada de lo que acaba de cargar. Se queda
+en el formulario, limpio para el siguiente, con la barra a la vista.
+
+**Un rechazo del servidor no se encola.** `esFalloDeRed` separa «no había red»
+de «el servidor contestó que no». Encolar un monto inválido sería reintentar
+para siempre algo que nunca va a andar, y el operario vería «pendiente» sin
+entender por qué. `fetch` avisa que no salió con un TypeError, y cada navegador
+le pone un texto distinto —Chrome «Failed to fetch», Firefox «NetworkError…»,
+Safari «Load failed»—, por eso se mira el tipo y además el texto.
+
+**Las fotos ya no se suben al elegirlas.** Antes sí, y se cambió por dos
+razones: sin señal fallaban una por una y el remito quedaba a medias, y un
+remito que subía las fotos y después fallaba al guardar dejaba **archivos
+huérfanos** en el bucket. Ahora el remito entero —datos y fotos— es una sola
+unidad que entra o no entra en la cola.
+
+**Un solo camino de envío** (`enviarRemito`), compartido por el formulario y por
+el reintento. Dos caminos sería tener uno —el del reintento— que casi nunca se
+ejecuta y que por eso se pudre sin que nadie se entere hasta el día que hace
+falta. Por eso `guardarRemitoAction` no redirige: la llama la cola, que no está
+navegando a ningún lado.
+
+⚠️ **No se usa Background Sync**, aunque la nota original lo mencionaba. No
+existe en Safari de iOS, y el operario usa el teléfono que tiene. Se reintenta
+con el evento `online`, al volver a la app y al abrirla: anda en todos los
+navegadores. Un mecanismo que funciona en la mitad de los dispositivos es peor
+que uno simple que funciona en todos, porque nadie sabe en cuál de las dos
+mitades está parado.
+
+⚠️ **IndexedDB no avisa a nadie cuando se escribe.** La barra no se enteraba de
+un remito recién encolado, así que `encolar` y `quitarDeLaCola` disparan un
+evento propio (`EVENTO_COLA`). Una barra que tarda en aparecer es, durante ese
+rato, el mismo fallo silencioso.
+
+⚠️ **IndexedDB es por contexto del navegador**, así que el test de ida y vuelta
+va en UN solo test. Partido en dos, el segundo abre un navegador sin cola: vería
+la barra ausente y lo tomaría por «subió» cuando no había nada. Verde sin probar
+nada.
 
 ### Apagar una finca no es archivarla
 
@@ -610,9 +668,12 @@ falla igual con un worker que con ocho—.
 
 ## 10. Pendientes
 
-### Las bases ya están separadas
+### Nada bloquea trabajar
 
-Era lo único que bloqueaba trabajar, y está hecho: `.env.test` apunta a
+Al 6 de septiembre de 2026 no queda ningún pendiente de código. Lo que sigue es
+el estado del deploy, lo único que se descartó, y lo que depende del usuario.
+
+**Las bases están separadas**: `.env.test` apunta a
 `infowell-dev`, con las seis migraciones, el seed, los dos buckets privados y
 los datos de demostración. Los tests corren.
 
@@ -635,9 +696,9 @@ Los `AUTH_SECRET` son distintos a propósito: la sesión es un JWT y **el rol
 viaja adentro del token**, así que con el mismo secreto una sesión creada en un
 preview —con las cuentas de prueba— tendría una firma que producción acepta.
 
-### Lo que puede hacerse sin el usuario
+### Lo único descartado
 
-| Pendiente | Nota |
+| Qué | Por qué no se hizo |
 |---|---|
 | **Clustering de marcadores** | **Descartado** (5 de septiembre de 2026). La bitácora decía «solo si crecen mucho las fincas» y el cliente tiene cuatro: construirlo ahora sería código especulativo que hay que mantener y que agrega una capa más al mapa. Se hace el día que los pines molesten de verdad. |
 
@@ -651,68 +712,29 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 | **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está y el botón aparece solo. El filtro de lista blanca **ya está hecho** (§6): Google no crea cuentas, solo deja entrar a quien ya está dado de alta y activo. |
 | **Transcripción de audio** | Crear cuenta en Groq y cargar `GROQ_API_KEY`. **Requiere IA**: no existe forma de transcribir voz con programación determinista. Groq tiene Whisper large-v3-turbo con plan gratuito generoso. |
 
-### La cola de remitos sin señal
+### Los dos scripts de limpieza
 
-El operario carga remitos parado en el campo, con 4G malo o sin nada. Un remito
-cargado sin señal se perdía, y él no se enteraba hasta mucho después —o nunca—.
+Los dos corren **en seco por defecto** y necesitan `--aplicar` para tocar algo.
 
-La regla que ordena todo el diseño es la que difería esta fase: **si falla en
-silencio, el operario cree que guardó y no guardó.** De ahí sale cada decisión:
-
-**Nunca dice «guardado» a secas.** Sin señal dice «guardado en el teléfono y sube
-solo», que es la verdad. Y hay una barra fija arriba, en TODAS las pantallas,
-con cuántos faltan. Una cola sin esa barra sería exactamente el fallo silencioso
-que veníamos a evitar, con más código.
-
-**Sin señal NO se navega.** Ir al listado de remitos llevaba a la pantalla de
-«Sin conexión», donde el operario no ve nada de lo que acaba de cargar. Se queda
-en el formulario, limpio para el siguiente, con la barra a la vista.
-
-**Un rechazo del servidor no se encola.** `esFalloDeRed` separa «no había red»
-de «el servidor contestó que no». Encolar un monto inválido sería reintentar
-para siempre algo que nunca va a andar, y el operario vería «pendiente» sin
-entender por qué. `fetch` avisa que no salió con un TypeError, y cada navegador
-le pone un texto distinto —Chrome «Failed to fetch», Firefox «NetworkError…»,
-Safari «Load failed»—, por eso se mira el tipo y además el texto.
-
-**Las fotos ya no se suben al elegirlas.** Antes sí, y se cambió por dos
-razones: sin señal fallaban una por una y el remito quedaba a medias, y un
-remito que subía las fotos y después fallaba al guardar dejaba **archivos
-huérfanos** en el bucket. Ahora el remito entero —datos y fotos— es una sola
-unidad que entra o no entra en la cola.
-
-**Un solo camino de envío** (`enviarRemito`), compartido por el formulario y por
-el reintento. Dos caminos sería tener uno —el del reintento— que casi nunca se
-ejecuta y que por eso se pudre sin que nadie se entere hasta el día que hace
-falta. Por eso `guardarRemitoAction` no redirige: la llama la cola, que no está
-navegando a ningún lado.
-
-⚠️ **No se usa Background Sync**, aunque la nota original lo mencionaba. No
-existe en Safari de iOS, y el operario usa el teléfono que tiene. Se reintenta
-con el evento `online`, al volver a la app y al abrirla: anda en todos los
-navegadores. Un mecanismo que funciona en la mitad de los dispositivos es peor
-que uno simple que funciona en todos, porque nadie sabe en cuál de las dos
-mitades está parado.
-
-⚠️ **IndexedDB no avisa a nadie cuando se escribe.** La barra no se enteraba de
-un remito recién encolado, así que `encolar` y `quitarDeLaCola` disparan un
-evento propio (`EVENTO_COLA`). Una barra que tarda en aparecer es, durante ese
-rato, el mismo fallo silencioso.
-
-⚠️ **IndexedDB es por contexto del navegador**, así que el test de ida y vuelta
-va en UN solo test. Partido en dos, el segundo abre un navegador sin cola: vería
-la barra ausente y lo tomaría por «subió» cuando no había nada. Verde sin probar
-nada.
-
-### Limpiar restos de pruebas
-
-`npx tsx scripts/limpiar-pruebas.ts` muestra qué borraría **sin tocar nada**;
-con `--aplicar` lo hace. Saca fincas, pozos y dibujos con nombre de prueba.
+`npx tsx scripts/limpiar-pruebas.ts` saca fincas, pozos y dibujos con nombre de
+prueba de la BASE.
 
 Se usó una vez, cuando treinta dibujos sueltos de los tests aparecieron en el
 mapa del cliente: la limpieza de los tests borraba por finca, y un dibujo
 suelto no tiene finca de la cual colgar. Ya está arreglado en el origen, pero
 el script queda por si aparece algo más.
+
+`npx tsx scripts/limpiar-huerfanos.ts` saca del BUCKET los archivos que ninguna
+fila usa. Aparecen cuando alguien elige una foto o graba un audio y después
+abandona la pantalla: el archivo queda ocupando cuota y nadie lo ve.
+
+Dos reglas suyas que conviene conocer antes de correrlo con `--aplicar`:
+
+- **Los archivos de las últimas 24 horas no se tocan nunca.** Uno recién subido
+  puede ser de un formulario todavía abierto en el celular de alguien.
+- **Un archivo de una fila con borrado SUAVE va aparte** y exige
+  `--incluir-borrados`: sacarlo vuelve ese borrado irreversible, y eso lo decide
+  una persona, no un script.
 
 ---
 
@@ -1145,17 +1167,29 @@ entra.
 lo vuelve a cargar. Sirve para guardarse una copia y para mudar los datos a
 otra instalación —por ejemplo al separar la base de pruebas de la del cliente.
 
+Desde la versión 2 del formato lleva también el **historial**: intervenciones,
+con sus servicios, su medición y sus observaciones de texto. Los servicios van
+por slug y las bombas por su etiqueta normalizada, nunca por id — los cuid son
+distintos en cada base, y un respaldo con ids no se podría importar en otra,
+que es la mitad del propósito. Un archivo de la versión 1 se sigue importando.
+
 ⚠️ **No es una copia completa, y la pantalla lo dice.** Quedan afuera los
-remitos y las notas de voz —sus fotos y audios viven en el almacenamiento de
-archivos y no entran en un archivo de texto; restaurar solo la fila dejaría
-remitos apuntando a fotos que no existen—, el historial de intervenciones y
-los usuarios. Un respaldo que promete más de lo que guarda es peor que no
-tener ninguno: el día que haga falta, ya es tarde para enterarse.
+remitos, las notas de voz y las imágenes del mapa —sus archivos viven en el
+bucket y no entran en un archivo de texto; restaurar solo la fila dejaría
+remitos apuntando a fotos que no existen—, las observaciones que eran solo
+audio, y los usuarios. Por eso mismo, al importar el historial queda a nombre
+de quien importó: no hay a quién más atribuírselo. Un respaldo que promete más
+de lo que guarda es peor que no tener ninguno: el día que haga falta, ya es
+tarde para enterarse.
 
 Importar es un **upsert por id**, no un borrado y alta: importar dos veces deja
 lo mismo que importar una, y volver a cargar una copia vieja corrige lo que
 estaba en ella sin borrar lo que se agregó después. Un import que borrara
 primero convertiría cada equivocación en pérdida de datos.
+
+El historial también va por upsert, y por eso la observación lleva su id en el
+archivo: sin él habría que borrar y recrear, y eso se llevaría puesto lo que se
+agregó después del respaldo.
 
 La geometría de cada dibujo se valida con las mismas reglas que al dibujarlo
 —el archivo lo pudo tocar cualquiera— y los que quedarían huérfanos se omiten
@@ -1218,9 +1252,15 @@ npx playwright test --grep "dibujos"      # un subconjunto
 E2E_BASE_URL=https://…  npx playwright test   # contra la app publicada
 ```
 
+⚠️ **Hay que bajar el `npm run dev` antes de correr los e2e.** Corren en el
+puerto 3100 y Next se niega a levantar un segundo servidor del mismo proyecto:
+los tests no arrancan, con un mensaje que no explica por qué. Es el precio de
+la traba — ver §9.
+
 ✅ **Los e2e no pueden correr contra la base del cliente.** Cortan antes de
-tocar nada si falta `.env.test` o si apunta al mismo proyecto que el `.env`.
-La traba está en `playwright.config.ts` y se verifica en
+tocar nada si falta `.env.test` o si apunta al mismo proyecto que el `.env`, y
+corren en su propio puerto para no poder reutilizar un servidor que apunte a
+producción. La traba está en `playwright.config.ts` y se verifica en
 `tests/unit/entorno.test.ts`.
 
 Los e2e **escriben en una base real**: crean y borran fincas, pozos y usuarios

@@ -10,13 +10,13 @@ import { requireAccess } from '@/server/guards'
 /**
  * Guarda un remito ya con sus fotos subidas.
  *
- * Existe aparte de `crearRemitoAction` porque NO redirige: la llama la cola de
+ * NO redirige, a propósito: la llaman el formulario y también la cola de
  * remitos pendientes, que corre en segundo plano y no está navegando a ningún
- * lado. Un `redirect()` ahí tiraría una excepción dentro del reintento.
+ * lado. Un `redirect()` acá tiraría una excepción dentro del reintento.
  *
- * Las dos comparten esta función para validar y guardar: un camino de reintento
- * distinto del camino en vivo se pudre sin que nadie lo note, porque casi nunca
- * se ejecuta.
+ * Los dos caminos pasan por esta misma función para validar y guardar: un
+ * camino de reintento distinto del camino en vivo se pudre sin que nadie lo
+ * note, porque casi nunca se ejecuta.
  */
 export async function guardarRemitoAction(
   farmId: string,
