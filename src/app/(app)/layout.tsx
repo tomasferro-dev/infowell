@@ -6,6 +6,7 @@ import { NavItem } from '@/components/layout/nav-item'
 import { Button } from '@/components/ui/button'
 import { logoutAction } from '@/server/actions/auth'
 import { requireActor } from '@/server/guards'
+import { RemitosPendientes } from '@/components/layout/remitos-pendientes'
 
 const ETIQUETA_ROL = {
   ADMIN: 'Administrador',
@@ -43,6 +44,11 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
       </header>
 
       {/* pb-24 deja lugar a la barra inferior, que es fija en mobile. */}
+      {/* Lo que se cargó sin señal y falta subir. Va en el layout y no en una
+          pantalla: el operario navega mientras espera señal, y un aviso que
+          solo se ve en una pantalla es un aviso que no se ve. */}
+      <RemitosPendientes />
+
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 pb-24">{children}</main>
 
       <nav className="bg-background fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)]">

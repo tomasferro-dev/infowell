@@ -2,56 +2,74 @@
 
 import imageCompression from 'browser-image-compression'
 import { Camera, ImagePlus, Loader2, X } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { VisorImagenes } from '@/components/data/visor-imagenes'
 import { Button } from '@/components/ui/button'
-import { describirFalloDeFirma } from '@/lib/subidas'
 import { cn } from '@/lib/utils'
 
 /**
  * Captura de fotos del remito.
  *
  * Está pensado para el peor caso real: el operario en el campo, con 4G malo.
- * Por eso las fotos se comprimen ANTES de salir del teléfono (una foto de
- * cámara moderna pesa 4-8 MB; comprimida queda en cientos de KB) y se suben una
- * por una, mostrando el progreso, para que un fallo no arrastre a todas.
+ * Las fotos se comprimen ANTES de salir del teléfono —una foto de cámara
+ * moderna pesa 4-8 MB; comprimida queda en cientos de KB— pero **no se suben
+ * acá**: se guardan comprimidas y suben recién al guardar el remito.
+ *
+ * Antes se subían apenas se elegían. Se cambió por dos razones:
+ *
+ *   - Sin señal fallaban una por una y el remito quedaba a medias. Ahora el
+ *     remito entero —datos y fotos— es una sola unidad que entra en la cola.
+ *   - Un remito que se subía y después fallaba al guardar dejaba las fotos
+ *     huérfanas en el bucket: filas que no existen apuntando a archivos que sí.
  */
 
 type Foto = {
   /** id local, para poder reordenar y borrar antes de guardar. */
   id: string
-  ruta: string
+  /** La foto ya comprimida, esperando a que se guarde el remito. */
+  blob: Blob
   previewUrl: string
-  subiendo: boolean
-  error?: boolean
+  /** Mientras se comprime: en un teléfono modesto tarda un segundo o dos. */
+  preparando: boolean
 }
 
 export function PhotoCapture({
-  farmId,
-  borradorId,
-  name = 'photos',
+  onFotos,
 }: {
-  farmId: string
-  /** Id del remito en borrador: agrupa las fotos antes de que exista la fila. */
-  borradorId: string
-  name?: string
+  /**
+   * Las fotos comprimidas y si alguna todavía se está achicando.
+   *
+   * El segundo dato no sobra: sin él, apretar Guardar mientras una foto se
+   * comprime guarda el remito SIN esa foto y sin decir nada — la pérdida
+   * silenciosa que toda esta pantalla existe para evitar.
+   */
+  onFotos: (fotos: Blob[], preparando: boolean) => void
 }) {
   const [fotos, setFotos] = useState<Foto[]>([])
   const [mensaje, setMensaje] = useState<string>()
   const [ampliada, setAmpliada] = useState<number>()
+  // Por ref: si el padre pasa una función nueva en cada render, depender de
+  // ella haría que el efecto corra siempre y avise en bucle.
+  const onFotosActual = useRef(onFotos)
+  // En un efecto sin dependencias, como hace el mapa con sus callbacks:
+  // asignar un ref durante el render es lo que React desaconseja.
+  useEffect(() => {
+    onFotosActual.current = onFotos
+  })
   const inputCamara = useRef<HTMLInputElement>(null)
   const inputGaleria = useRef<HTMLInputElement>(null)
 
-  async function subirUna(archivo: File): Promise<void> {
+  async function prepararUna(archivo: File): Promise<void> {
     const id = crypto.randomUUID()
     const previewUrl = URL.createObjectURL(archivo)
 
-    setFotos((previas) => [...previas, { id, ruta: '', previewUrl, subiendo: true }])
+    setFotos((previas) => [...previas, { id, blob: archivo, previewUrl, preparando: true }])
 
     try {
       // 1600px de lado mayor: sobra para leer un remito en pantalla y en un
-      // zoom razonable, y baja el peso un orden de magnitud.
+      // zoom razonable, y baja el peso un orden de magnitud. Se comprime acá
+      // y no al subir: así lo que espera en la cola ya es chico.
       const comprimida = await imageCompression(archivo, {
         maxSizeMB: 1,
         maxWidthOrHeight: 1600,
@@ -59,39 +77,16 @@ export function PhotoCapture({
         fileType: 'image/jpeg',
       })
 
-      const firma = await fetch('/api/uploads/sign', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          tipo: 'remito',
-          farmId,
-          recursoId: borradorId,
-          mimeType: 'image/jpeg',
-        }),
-      })
-
-      if (!firma.ok) throw new Error(await describirFalloDeFirma(firma))
-      const { signedUrl, ruta } = await firma.json()
-
-      const cuerpo = new FormData()
-      cuerpo.append('cacheControl', '3600')
-      cuerpo.append('', comprimida)
-
-      const subida = await fetch(signedUrl, { method: 'PUT', body: cuerpo })
-      if (!subida.ok) {
-        throw new Error(`El servidor de archivos rechazó la foto (${subida.status}).`)
-      }
-
       setFotos((previas) =>
-        previas.map((f) => (f.id === id ? { ...f, ruta, subiendo: false } : f)),
+        previas.map((f) => (f.id === id ? { ...f, blob: comprimida, preparando: false } : f)),
       )
-    } catch (error) {
+    } catch {
+      // Si no se puede comprimir se usa el original: pesa más, pero perder la
+      // foto por no poder achicarla sería peor.
       setFotos((previas) =>
-        previas.map((f) => (f.id === id ? { ...f, subiendo: false, error: true } : f)),
+        previas.map((f) => (f.id === id ? { ...f, preparando: false } : f)),
       )
-      // Se muestra la causa real: sin esto, un problema de configuración se
-      // ve igual que una foto pesada o una señal mala.
-      setMensaje(error instanceof Error ? error.message : 'No se pudo subir la foto.')
+      setMensaje('Una foto no se pudo achicar. Va como está, puede tardar más en subir.')
     }
   }
 
@@ -101,10 +96,10 @@ export function PhotoCapture({
     e.target.value = ''
     setMensaje(undefined)
 
-    // Secuencial y no en paralelo: con señal pobre, cuatro subidas simultáneas
-    // se pisan entre sí y tardan más que una atrás de otra.
+    // Secuencial: comprimir cuatro fotos a la vez en un teléfono modesto lo
+    // deja sin memoria y el navegador mata la pestaña.
     for (const archivo of archivos) {
-      await subirUna(archivo)
+      await prepararUna(archivo)
     }
   }
 
@@ -128,17 +123,22 @@ export function PhotoCapture({
     })
   }
 
-  const subiendoAlguna = fotos.some((f) => f.subiendo)
+  const preparandoAlguna = fotos.some((f) => f.preparando)
+
+  /*
+   * Se avisa hacia arriba en un efecto y no dentro de `setFotos`: llamar al
+   * padre desde el actualizador de estado lo hace renderizar en medio del
+   * render de este, que React marca como error.
+   */
+  useEffect(() => {
+    onFotosActual.current(
+      fotos.filter((f) => !f.preparando).map((f) => f.blob),
+      fotos.some((f) => f.preparando),
+    )
+  }, [fotos])
 
   return (
     <div className="space-y-3">
-      {/* Solo las subidas OK viajan en el submit, en el orden elegido. */}
-      {fotos
-        .filter((f) => f.ruta && !f.error)
-        .map((f) => (
-          <input key={f.id} type="hidden" name={name} value={f.ruta} />
-        ))}
-
       <div className="grid grid-cols-2 gap-2">
         {/* capture="environment" abre la cámara trasera directo, sin pasar por
             el selector de archivos. Es el flujo que usa el operario. */}
@@ -187,12 +187,12 @@ export function PhotoCapture({
               <div
                 className={cn(
                   'relative aspect-square overflow-hidden rounded-lg border',
-                  foto.error && 'border-destructive',
+                  foto.preparando && 'opacity-70',
                 )}
               >
                 <button
                   type="button"
-                  onClick={() => !foto.subiendo && setAmpliada(indice)}
+                  onClick={() => !foto.preparando && setAmpliada(indice)}
                   className="size-full"
                   aria-label={`Ampliar foto ${indice + 1}`}
                 >
@@ -204,7 +204,7 @@ export function PhotoCapture({
                   />
                 </button>
 
-                {foto.subiendo ? (
+                {foto.preparando ? (
                   <span className="absolute inset-0 flex items-center justify-center bg-black/50">
                     <Loader2 className="size-5 animate-spin text-white" />
                   </span>
@@ -247,10 +247,10 @@ export function PhotoCapture({
         </ul>
       ) : null}
 
-      {subiendoAlguna ? (
+      {preparandoAlguna ? (
         <p className="text-muted-foreground flex items-center gap-2 text-sm">
           <Loader2 className="size-4 animate-spin" />
-          Subiendo fotos…
+          Achicando fotos…
         </p>
       ) : null}
 

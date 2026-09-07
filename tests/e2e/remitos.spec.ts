@@ -54,8 +54,12 @@ test.describe('carga de remitos', () => {
       buffer: PNG_MINIMO,
     })
 
-    // Espera a que termine la subida antes de guardar.
-    await expect(page.getByText('Subiendo fotos…')).toHaveCount(0, { timeout: 20_000 })
+    // Las fotos ya no se suben al elegirlas: se achican y viajan al guardar.
+    // El botón queda bloqueado mientras tanto, así que esperar a que vuelva a
+    // decir «Guardar remito» es esperar a que la foto esté lista de verdad.
+    await expect(page.getByRole('button', { name: 'Guardar remito' })).toBeEnabled({
+      timeout: 20_000,
+    })
     await expect(page.getByRole('button', { name: /Quitar foto 1/ })).toBeVisible()
 
     await page.getByRole('button', { name: 'Guardar remito' }).click()
@@ -209,8 +213,21 @@ test.describe('cuando Storage falla', () => {
       buffer: PNG_MINIMO,
     })
 
+    // La firma se pide al GUARDAR, no al elegir la foto: las fotos ya no se
+    // suben ansiosamente. Hay que llegar hasta el submit para ver el fallo.
+    await escribir(page.getByLabel('Monto'), '1000')
+    await expect(page.getByRole('button', { name: 'Guardar remito' })).toBeEnabled({
+      timeout: 20_000,
+    })
+    await page.getByRole('button', { name: 'Guardar remito' }).click()
+
     // El operario tiene que enterarse de que no es culpa suya ni de la señal.
-    await expect(page.getByText(/Revisá la configuración de Storage/)).toBeVisible()
+    await expect(page.getByText(/Revisá la configuración de Storage/)).toBeVisible({
+      timeout: 20_000,
+    })
+
+    // Y NO se encola: el servidor contestó que no, y reintentarlo no lo arregla.
+    await expect(page.locator('[data-remitos-pendientes]')).toHaveCount(0)
   })
 
   test('una sesión vencida se distingue de un problema del servidor', async ({ page }) => {
@@ -235,7 +252,15 @@ test.describe('cuando Storage falla', () => {
       buffer: PNG_MINIMO,
     })
 
-    await expect(page.getByText(/Se cerró tu sesión/)).toBeVisible()
+    // La firma se pide al GUARDAR, no al elegir la foto: las fotos ya no se
+    // suben ansiosamente. Hay que llegar hasta el submit para ver el fallo.
+    await escribir(page.getByLabel('Monto'), '1000')
+    await expect(page.getByRole('button', { name: 'Guardar remito' })).toBeEnabled({
+      timeout: 20_000,
+    })
+    await page.getByRole('button', { name: 'Guardar remito' }).click()
+
+    await expect(page.getByText(/Se cerró tu sesión/)).toBeVisible({ timeout: 20_000 })
   })
 })
 
@@ -272,7 +297,9 @@ test.describe('detalle del remito', () => {
       { name: 'a.png', mimeType: 'image/png', buffer: PNG_MINIMO },
       { name: 'b.png', mimeType: 'image/png', buffer: PNG_MINIMO },
     ])
-    await expect(page.getByText('Subiendo fotos…')).toHaveCount(0, { timeout: 20_000 })
+    await expect(page.getByRole('button', { name: 'Guardar remito' })).toBeEnabled({
+      timeout: 20_000,
+    })
     await page.getByRole('button', { name: 'Guardar remito' }).click()
     await expect(page).toHaveURL(urlRemitos)
 

@@ -85,8 +85,8 @@ privados y los datos de demostración.
 ```
 tsc              0 errores
 eslint           0 errores
-vitest           211 tests unitarios
-playwright       318 pasan, 2 salteados, 0 fallan  — 20,0 min
+vitest           228 tests unitarios
+playwright       336 pasan, 2 salteados, 0 fallan  — 19,7 min
 build sin .env   compila
 ```
 
@@ -541,6 +541,13 @@ el de otro y falla por algo que no tiene que ver con lo que estaba probando.
 - `shadcn` v4 **reemplazó el componente `form` por `field`**; `CardTitle`
   renderiza un `div`, no un heading.
 
+**Antes de leer los fallos, mirar cuánto tardó la corrida.** Una suite que
+tarda 20 minutos y reporta 14 horas no falló por el código: se le murió el
+servidor en el medio y todo lo posterior cayó por timeout de navegación. Pasó,
+y los fallos parecían regresiones en los módulos recién tocados. Lo mismo vale
+si TODOS los fallos son del mismo tipo de error —timeouts, conexión rechazada—:
+eso apunta al entorno, no al código.
+
 **Los e2e corren en el puerto 3100, no en el 3000.** No es comodidad: es la
 segunda mitad de la traba que impide tocar la base del cliente.
 
@@ -611,7 +618,6 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 
 | Pendiente | Nota |
 |---|---|
-| **Cola de subida offline** | IndexedDB + Background Sync. Diferido a propósito: si falla en silencio, el operario cree que guardó y no guardó. Es una fase propia. |
 | **Clustering de marcadores** | **Descartado** (5 de septiembre de 2026). La bitácora decía «solo si crecen mucho las fincas» y el cliente tiene cuatro: construirlo ahora sería código especulativo que hay que mantener y que agrega una capa más al mapa. Se hace el día que los pines molesten de verdad. |
 
 ### Lo que necesita acción del usuario
@@ -623,6 +629,59 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 | **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md: sin esa lista, la clave sirve desde cualquier sitio y un tercero puede gastar la cuota. |
 | **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está; el botón aparece solo. ⚠️ Antes hay que agregar un filtro para que solo entren emails ya dados de alta. |
 | **Transcripción de audio** | Crear cuenta en Groq y cargar `GROQ_API_KEY`. **Requiere IA**: no existe forma de transcribir voz con programación determinista. Groq tiene Whisper large-v3-turbo con plan gratuito generoso. |
+
+### La cola de remitos sin señal
+
+El operario carga remitos parado en el campo, con 4G malo o sin nada. Un remito
+cargado sin señal se perdía, y él no se enteraba hasta mucho después —o nunca—.
+
+La regla que ordena todo el diseño es la que difería esta fase: **si falla en
+silencio, el operario cree que guardó y no guardó.** De ahí sale cada decisión:
+
+**Nunca dice «guardado» a secas.** Sin señal dice «guardado en el teléfono y sube
+solo», que es la verdad. Y hay una barra fija arriba, en TODAS las pantallas,
+con cuántos faltan. Una cola sin esa barra sería exactamente el fallo silencioso
+que veníamos a evitar, con más código.
+
+**Sin señal NO se navega.** Ir al listado de remitos llevaba a la pantalla de
+«Sin conexión», donde el operario no ve nada de lo que acaba de cargar. Se queda
+en el formulario, limpio para el siguiente, con la barra a la vista.
+
+**Un rechazo del servidor no se encola.** `esFalloDeRed` separa «no había red»
+de «el servidor contestó que no». Encolar un monto inválido sería reintentar
+para siempre algo que nunca va a andar, y el operario vería «pendiente» sin
+entender por qué. `fetch` avisa que no salió con un TypeError, y cada navegador
+le pone un texto distinto —Chrome «Failed to fetch», Firefox «NetworkError…»,
+Safari «Load failed»—, por eso se mira el tipo y además el texto.
+
+**Las fotos ya no se suben al elegirlas.** Antes sí, y se cambió por dos
+razones: sin señal fallaban una por una y el remito quedaba a medias, y un
+remito que subía las fotos y después fallaba al guardar dejaba **archivos
+huérfanos** en el bucket. Ahora el remito entero —datos y fotos— es una sola
+unidad que entra o no entra en la cola.
+
+**Un solo camino de envío** (`enviarRemito`), compartido por el formulario y por
+el reintento. Dos caminos sería tener uno —el del reintento— que casi nunca se
+ejecuta y que por eso se pudre sin que nadie se entere hasta el día que hace
+falta. Por eso `guardarRemitoAction` no redirige: la llama la cola, que no está
+navegando a ningún lado.
+
+⚠️ **No se usa Background Sync**, aunque la nota original lo mencionaba. No
+existe en Safari de iOS, y el operario usa el teléfono que tiene. Se reintenta
+con el evento `online`, al volver a la app y al abrirla: anda en todos los
+navegadores. Un mecanismo que funciona en la mitad de los dispositivos es peor
+que uno simple que funciona en todos, porque nadie sabe en cuál de las dos
+mitades está parado.
+
+⚠️ **IndexedDB no avisa a nadie cuando se escribe.** La barra no se enteraba de
+un remito recién encolado, así que `encolar` y `quitarDeLaCola` disparan un
+evento propio (`EVENTO_COLA`). Una barra que tarda en aparecer es, durante ese
+rato, el mismo fallo silencioso.
+
+⚠️ **IndexedDB es por contexto del navegador**, así que el test de ida y vuelta
+va en UN solo test. Partido en dos, el segundo abre un navegador sin cola: vería
+la barra ausente y lo tomaría por «subió» cuando no había nada. Verde sin probar
+nada.
 
 ### Limpiar restos de pruebas
 

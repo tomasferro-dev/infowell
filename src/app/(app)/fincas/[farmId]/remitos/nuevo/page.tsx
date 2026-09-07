@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation'
 
 import { RemitoForm } from '@/components/forms/remito-form'
 import { Button } from '@/components/ui/button'
-import { crearRemitoAction } from '@/server/actions/receipts'
 import { requireAccess } from '@/server/guards'
 import { obtenerFinca } from '@/server/queries/farms'
 
@@ -19,8 +18,6 @@ export default async function NuevoRemitoPage({
 
   const finca = await obtenerFinca(farmId)
   if (!finca) notFound()
-
-  const action = crearRemitoAction.bind(null, farmId)
 
   // Fecha local, no UTC: después de las 21 h en Argentina, toISOString ya
   // devuelve el día siguiente.
@@ -41,7 +38,7 @@ export default async function NuevoRemitoPage({
         <p className="text-muted-foreground text-sm">{finca.name}</p>
       </div>
 
-      <RemitoForm action={action} farmId={farmId} fechaPorDefecto={fechaHoy} />
+      <RemitoForm farmId={farmId} fechaPorDefecto={fechaHoy} />
     </div>
   )
 }

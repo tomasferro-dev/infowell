@@ -66,12 +66,26 @@ export function CampoTexto({
   )
 }
 
-export function BotonGuardar({ children = 'Guardar' }: { children?: React.ReactNode }) {
+export function BotonGuardar({
+  children = 'Guardar',
+  ocupado = false,
+}: {
+  children?: React.ReactNode
+  /**
+   * Para los formularios que envían con `onSubmit` en vez de `action`.
+   *
+   * `useFormStatus` solo sabe de los que usan `action`: en los otros queda
+   * siempre en falso y el botón no se bloquea, así que un doble toque manda
+   * dos veces — y en un celular en el campo, el doble toque es la regla.
+   */
+  ocupado?: boolean
+}) {
   const { pending } = useFormStatus()
+  const esperando = pending || ocupado
 
   return (
-    <Button type="submit" className="h-12 w-full text-base" disabled={pending}>
-      {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+    <Button type="submit" className="h-12 w-full text-base" disabled={esperando}>
+      {esperando ? <Loader2 className="size-4 animate-spin" /> : null}
       {children}
     </Button>
   )

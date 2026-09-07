@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test'
 
-import { escribir, limpiarDatos, login, marca, montarDatos, type DatosTest } from './helpers'
+import {
+  escribir,
+  limpiarDatos,
+  login,
+  marca,
+  montarDatos,
+  sembrarHistorial,
+  type DatosTest,
+} from './helpers'
 
 /**
  * Respaldo de los datos.
@@ -20,6 +28,8 @@ let datos: DatosTest
 
 test.beforeAll(() => {
   datos = montarDatos(marca)
+  // El historial que este archivo necesita, sembrado solo para él.
+  sembrarHistorial(marca)
 })
 
 test.afterAll(() => {

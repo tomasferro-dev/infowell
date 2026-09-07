@@ -75,40 +75,6 @@ async function setup(marca: string) {
     select: { id: true, wells: { select: { id: true } } },
   })
 
-  /*
-   * Una visita con medición, un servicio y una observación de texto.
-   *
-   * Existe para que los tests que miran el HISTORIAL —el respaldo, sobre todo—
-   * tengan algo propio de la corrida. Sin esto dependerían de los datos de
-   * demostración, que pueden no estar en la base donde corren los tests.
-   */
-  const servicio = await prisma.serviceType.findFirst({ select: { id: true, slug: true } })
-
-  await prisma.intervention.create({
-    data: {
-      wellId: fincaPropia.wells[0]!.id,
-      performedAt: new Date('2026-03-14T00:00:00Z'),
-      createdById: admin.id,
-      ...(servicio ? { services: { create: { serviceTypeId: servicio.id } } } : {}),
-      reading: {
-        create: {
-          wellId: fincaPropia.wells[0]!.id,
-          measuredAt: new Date('2026-03-14T00:00:00Z'),
-          staticLevelM: '42.50',
-          dynamicLevelM: '58.00',
-          createdById: admin.id,
-        },
-      },
-      observations: {
-        create: {
-          wellId: fincaPropia.wells[0]!.id,
-          body: `Observación de ${marca}`,
-          createdById: admin.id,
-        },
-      },
-    },
-  })
-
   const fincaAjena = await prisma.farm.create({
     data: {
       name: `${marca} Finca Ajena`,
@@ -315,6 +281,55 @@ async function borrarImagenes(marca: string) {
   return { borradas: count }
 }
 
+/**
+ * Siembra una visita con medición, servicio y observación de texto.
+ *
+ * NO va en `setup`: agregarla al fixture compartido le cambia lo que ven TODOS
+ * los tests, y ya rompió los de intervenciones —veían dos visitas donde
+ * esperaban una—. Un fixture común solo puede tener lo que todos necesitan.
+ */
+async function sembrarHistorial(marca: string) {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: 'ADMIN' },
+    select: { id: true },
+  })
+
+  const pozo = await prisma.well.findFirstOrThrow({
+    where: { farm: { name: { contains: `${marca} Finca Propia` } }, deletedAt: null },
+    select: { id: true },
+  })
+
+  const servicio = await prisma.serviceType.findFirst({ select: { id: true } })
+
+  const visita = await prisma.intervention.create({
+    data: {
+      wellId: pozo.id,
+      performedAt: new Date('2026-03-14T00:00:00Z'),
+      createdById: admin.id,
+      ...(servicio ? { services: { create: { serviceTypeId: servicio.id } } } : {}),
+      reading: {
+        create: {
+          wellId: pozo.id,
+          measuredAt: new Date('2026-03-14T00:00:00Z'),
+          staticLevelM: '42.50',
+          dynamicLevelM: '58.00',
+          createdById: admin.id,
+        },
+      },
+      observations: {
+        create: {
+          wellId: pozo.id,
+          body: `Observación de ${marca}`,
+          createdById: admin.id,
+        },
+      },
+    },
+    select: { id: true },
+  })
+
+  return { interventionId: visita.id, wellId: pozo.id }
+}
+
 async function main() {
   const [comando, marca] = process.argv.slice(2)
 
@@ -335,6 +350,8 @@ async function main() {
                 ? await borrarDibujos(marca)
                 : comando === 'borrar-imagenes'
                   ? await borrarImagenes(marca)
+                  : comando === 'sembrar-historial'
+                    ? await sembrarHistorial(marca)
             : await teardown(marca)
 
   // El spec lee esto por stdout.

@@ -1,51 +1,50 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
 
 import { interpretarRuta } from '@/lib/storage-paths'
 import { crearRemitoSchema } from '@/lib/validation/remito'
 import { prisma } from '@/server/db'
 import { requireAccess } from '@/server/guards'
 
-import type { FormState } from '@/server/actions/farms'
-
-function erroresDeCampo(issues: { path: PropertyKey[]; message: string }[]) {
-  const out: Record<string, string> = {}
-  for (const issue of issues) {
-    const campo = String(issue.path[0] ?? '')
-    if (campo && !out[campo]) out[campo] = issue.message
-  }
-  return out
-}
-
-export async function crearRemitoAction(
+/**
+ * Guarda un remito ya con sus fotos subidas.
+ *
+ * Existe aparte de `crearRemitoAction` porque NO redirige: la llama la cola de
+ * remitos pendientes, que corre en segundo plano y no está navegando a ningún
+ * lado. Un `redirect()` ahí tiraría una excepción dentro del reintento.
+ *
+ * Las dos comparten esta función para validar y guardar: un camino de reintento
+ * distinto del camino en vivo se pudre sin que nadie lo note, porque casi nunca
+ * se ejecuta.
+ */
+export async function guardarRemitoAction(
   farmId: string,
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
+  campos: Record<string, string>,
+  photos: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const actor = await requireAccess('write', 'receipt', farmId)
 
-  const parsed = crearRemitoSchema.safeParse({
-    ...Object.fromEntries(formData),
-    photos: formData.getAll('photos').filter((v): v is string => typeof v === 'string' && v !== ''),
-  })
+  const parsed = crearRemitoSchema.safeParse({ ...campos, photos })
 
   if (!parsed.success) {
     return {
-      error: parsed.error.issues.find((i) => i.path.length === 0)?.message ?? 'Revisá los datos',
-      fieldErrors: erroresDeCampo(parsed.error.issues),
+      ok: false,
+      error:
+        parsed.error.issues.find((i) => i.path.length === 0)?.message ??
+        parsed.error.issues[0]?.message ??
+        'Revisá los datos',
     }
   }
 
-  const { photos, ...datos } = parsed.data
+  const { photos: rutas, ...datos } = parsed.data
 
   // Las rutas las generó el servidor al firmar, pero vuelven desde el
   // navegador: se revalida que TODAS apunten a esta finca antes de guardarlas.
-  for (const ruta of photos) {
+  for (const ruta of rutas) {
     const partes = interpretarRuta(ruta)
     if (!partes || partes.farmId !== farmId) {
-      return { error: 'Alguna de las fotos no es válida' }
+      return { ok: false, error: 'Alguna de las fotos no es válida' }
     }
   }
 
@@ -56,7 +55,7 @@ export async function crearRemitoAction(
       createdById: actor.id,
       photos: {
         // sortOrder preserva el orden que eligió el usuario en la grilla.
-        create: photos.map((storagePath, i) => ({
+        create: rutas.map((storagePath, i) => ({
           storagePath,
           mimeType: 'image/jpeg',
           sortOrder: i,
@@ -67,7 +66,8 @@ export async function crearRemitoAction(
 
   revalidatePath(`/fincas/${farmId}/remitos`)
   revalidatePath(`/fincas/${farmId}`)
-  redirect(`/fincas/${farmId}/remitos`)
+
+  return { ok: true }
 }
 
 export async function archivarRemitoAction(farmId: string, receiptId: string) {
