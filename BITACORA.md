@@ -271,6 +271,27 @@ Dos recursos no cuelgan de ninguna finca y por eso tienen reglas propias:
 5. **Los updates usan `updateMany` con `{ id, farmId }` en el `where`.** Aunque
    alguien conozca el id de un pozo ajeno, no afecta ninguna fila.
 
+### Google no crea cuentas
+
+La entrada por Google es una **lista blanca**: el email tiene que estar ya dado
+de alta en la app y activo. Sin eso, cargar las credenciales de OAuth abriría
+InfoWell a cualquiera con una cuenta de Google —o sea, a cualquiera— y acá hay
+datos de fincas de clientes distintos. El alta la sigue haciendo el
+administrador, que es quien sabe qué finca le corresponde a cada uno.
+
+Vive en el callback `signIn` de `auth.ts` y no en `auth.config.ts`: consulta la
+base, y ese archivo lo carga el middleware en el runtime edge, donde Prisma no
+existe.
+
+⚠️ **La búsqueda es insensible a mayúsculas.** Los emails se guardan tal como
+los escribe el administrador y Google los manda en minúscula, así que una
+comparación exacta dejaría afuera a alguien dado de alta como «Nahuel@…».
+
+⚠️ **Ante dos cuentas que solo difieren en mayúsculas, no entra ninguna.** No
+se puede saber a cuál de las dos personas corresponde, y una puerta de entrada
+que adivina no es una puerta. Por eso la consulta usa `findMany` y no
+`findFirst`, que elegiría una cualquiera.
+
 ### La auditoría
 
 `tests/e2e/auditoria-idor.spec.ts` es el **inventario vivo de superficie de
@@ -627,7 +648,7 @@ preview —con las cuentas de prueba— tendría una firma que producción acept
 | **Cargar las fincas reales** | El mapa solo muestra lo que alguien marcó con el GPS estando en el lugar. Los datos de demostración ya vienen ubicados; las fincas de verdad hay que salir a marcarlas. |
 | **Dominio propio (DonWeb)** | Comprarlo. Después: agregarlo en Vercel y copiar los registros DNS **que muestre el panel** (no los de un tutorial: las IP cambiaron). No hace falta para nada — la URL `.vercel.app` ya tiene HTTPS, que es lo único que exigen cámara y micrófono. |
 | **Allowed HTTP Origins en MapTiler** | Cuando esté el dominio. Ver DEPLOY.md: sin esa lista, la clave sirve desde cualquier sitio y un tercero puede gastar la cuota. |
-| **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está; el botón aparece solo. ⚠️ Antes hay que agregar un filtro para que solo entren emails ya dados de alta. |
+| **Login con Google** | Crear OAuth client en Google Cloud Console con los redirect URIs, y cargar `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` en Vercel. El código ya está y el botón aparece solo. El filtro de lista blanca **ya está hecho** (§6): Google no crea cuentas, solo deja entrar a quien ya está dado de alta y activo. |
 | **Transcripción de audio** | Crear cuenta en Groq y cargar `GROQ_API_KEY`. **Requiere IA**: no existe forma de transcribir voz con programación determinista. Groq tiene Whisper large-v3-turbo con plan gratuito generoso. |
 
 ### La cola de remitos sin señal
